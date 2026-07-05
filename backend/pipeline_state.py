@@ -7,6 +7,7 @@ def create_session() -> str:
     session_id = str(uuid.uuid4())
     SESSIONS[session_id] = {
         "dataset": None,
+        "target_column": None,
         "schema": None,
         "X": None,
         "y": None,

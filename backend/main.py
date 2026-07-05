@@ -2,8 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from datasets import get_dataset
-from schema import detect_schema
+from datasets import BUILTIN_DATASETS, get_dataset
+from schema import build_dataset_info
 from pipeline_state import create_session, get_session, require_keys
 
 app = FastAPI()
@@ -26,6 +26,7 @@ STAGE_REQUIREMENTS = {
 
 class StartRequest(BaseModel):
     dataset: str
+    target_column: str
 
 
 def stage_response(session_id: str, stage: str, status: str, summary: dict):
@@ -47,13 +48,25 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/datasets")
+def list_datasets():
+    result = []
+    for name, info in BUILTIN_DATASETS.items():
+        df = get_dataset(name)
+        result.append(
+            {
+                "name": name,
+                "default_target": info["default_target"],
+                "columns": list(df.columns),
+            }
+        )
+    return result
+
+
 @app.get("/dataset/{name}")
-def dataset(name: str):
-    target_column = "target"
+def dataset(name: str, target_column: str = "target"):
     df = get_dataset(name)
-    rows = df.head(10).to_dict(orient="records")
-    schema = detect_schema(df, target_column)
-    return {"rows": rows, "schema": schema}
+    return build_dataset_info(df, target_column)
 
 
 @app.post("/pipeline/start")
@@ -61,21 +74,16 @@ def pipeline_start(body: StartRequest):
     session_id = create_session()
     session = get_session(session_id)
 
-    target_column = "target"
     df = get_dataset(body.dataset)
-    schema = detect_schema(df, target_column)
+    info = build_dataset_info(df, body.target_column)
 
     session["dataset"] = df
-    session["schema"] = schema
-    session["X"] = df.drop(columns=[target_column])
-    session["y"] = df[target_column]
+    session["target_column"] = body.target_column
+    session["schema"] = info["schema"]
+    session["X"] = df.drop(columns=[body.target_column])
+    session["y"] = df[body.target_column]
 
-    summary = {
-        "rows": len(df),
-        "columns": len(df.columns),
-        "problem_type": schema["problem_type"],
-    }
-    return stage_response(session_id, "start", "done", summary)
+    return stage_response(session_id, "start", "done", info)
 
 
 def run_stage(session_id: str, stage: str):

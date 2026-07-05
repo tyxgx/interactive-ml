@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import DatasetSelector from "@/components/DatasetSelector";
+import TargetColumnSelector from "@/components/TargetColumnSelector";
 import LoadDatasetButton from "@/components/LoadDatasetButton";
 import RunButton from "@/components/RunButton";
 import Pipeline from "@/components/Pipeline";
 import DatasetPreview from "@/components/DatasetPreview";
 import OutputPanel from "@/components/OutputPanel";
 import { algorithms } from "@/lib/algorithms";
-import { DatasetResult } from "@/lib/dataset";
+import { DatasetResult, DatasetListItem } from "@/lib/dataset";
 import {
   StageName,
   StageState,
@@ -20,7 +21,9 @@ import {
 
 export default function Home() {
   const [selectedId, setSelectedId] = useState(algorithms[0].id);
-  const [selectedDataset, setSelectedDataset] = useState("Iris");
+  const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
+  const [selectedDataset, setSelectedDataset] = useState("");
+  const [selectedTargetColumn, setSelectedTargetColumn] = useState("");
   const [datasetResult, setDatasetResult] = useState<DatasetResult | null>(
     null
   );
@@ -32,12 +35,37 @@ export default function Home() {
     stages: createInitialStages(),
   });
 
+  useEffect(() => {
+    const loadDatasets = async () => {
+      const response = await fetch("http://localhost:8000/datasets");
+      const data: DatasetListItem[] = await response.json();
+      setDatasets(data);
+      if (data.length > 0) {
+        setSelectedDataset(data[0].name);
+        setSelectedTargetColumn(data[0].default_target);
+      }
+    };
+    loadDatasets();
+  }, []);
+
   const selectedAlgorithm =
     algorithms.find((algorithm) => algorithm.id === selectedId) ??
     algorithms[0];
 
+  const selectedDatasetColumns =
+    datasets.find((dataset) => dataset.name === selectedDataset)?.columns ??
+    [];
+
+  const handleDatasetChange = (name: string) => {
+    setSelectedDataset(name);
+    const dataset = datasets.find((d) => d.name === name);
+    setSelectedTargetColumn(dataset?.default_target ?? "");
+  };
+
   const handleLoadDataset = async () => {
-    const response = await fetch("http://localhost:8000/dataset/iris");
+    const response = await fetch(
+      `http://localhost:8000/dataset/${selectedDataset}?target_column=${selectedTargetColumn}`
+    );
     const data = await response.json();
     setDatasetResult(data);
   };
@@ -68,7 +96,10 @@ export default function Home() {
         ? {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dataset: selectedDataset.toLowerCase() }),
+            body: JSON.stringify({
+              dataset: selectedDataset,
+              target_column: selectedTargetColumn,
+            }),
           }
         : { method: "POST" };
 
@@ -123,8 +154,14 @@ export default function Home() {
 
         <div className="flex items-end gap-4">
           <DatasetSelector
+            datasets={datasets}
             value={selectedDataset}
-            onChange={setSelectedDataset}
+            onChange={handleDatasetChange}
+          />
+          <TargetColumnSelector
+            columns={selectedDatasetColumns}
+            value={selectedTargetColumn}
+            onChange={setSelectedTargetColumn}
           />
           <LoadDatasetButton onClick={handleLoadDataset} />
           <RunButton onClick={handleRun} />

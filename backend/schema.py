@@ -18,3 +18,25 @@ def detect_schema(df: pd.DataFrame, target_column: str) -> dict:
         problem_type = "regression"
 
     return {"columns": columns, "problem_type": problem_type}
+
+
+def build_dataset_info(df: pd.DataFrame, target_column: str) -> dict:
+    schema = detect_schema(df, target_column)
+    numeric_columns = [c["name"] for c in schema["columns"] if c["type"] == "numeric"]
+    categorical_columns = [
+        c["name"] for c in schema["columns"] if c["type"] == "categorical"
+    ]
+
+    missing_counts = df.isna().sum()
+    missing_values = {
+        column: int(count) for column, count in missing_counts.items() if count > 0
+    }
+
+    return {
+        "rows": df.head(10).to_dict(orient="records"),
+        "shape": {"rows": len(df), "columns": len(df.columns)},
+        "schema": schema,
+        "missing_values": missing_values,
+        "numeric_columns": numeric_columns,
+        "categorical_columns": categorical_columns,
+    }
