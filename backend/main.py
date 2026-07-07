@@ -48,6 +48,7 @@ STAGE_REQUIREMENTS = {
     "train": ["preprocessed_data"],
     "predict": ["model"],
     "evaluate": ["predictions"],
+    "compare": ["preprocessed_data"],
 }
 
 
@@ -313,6 +314,36 @@ def predict(session_id: str):
         )
 
 
+def compute_metrics(y_test, predictions, problem_type: str) -> dict:
+    if problem_type == "classification":
+        return {
+            "accuracy": round(accuracy_score(y_test, predictions), 4),
+            "precision": round(
+                precision_score(
+                    y_test, predictions, average="weighted", zero_division=0
+                ),
+                4,
+            ),
+            "recall": round(
+                recall_score(
+                    y_test, predictions, average="weighted", zero_division=0
+                ),
+                4,
+            ),
+            "f1": round(
+                f1_score(y_test, predictions, average="weighted", zero_division=0),
+                4,
+            ),
+        }
+
+    rmse = mean_squared_error(y_test, predictions) ** 0.5
+    return {
+        "r2": round(r2_score(y_test, predictions), 4),
+        "rmse": round(rmse, 4),
+        "mae": round(mean_absolute_error(y_test, predictions), 4),
+    }
+
+
 @app.post("/pipeline/{session_id}/evaluate")
 def evaluate(session_id: str):
     stage = "evaluate"
@@ -325,36 +356,54 @@ def evaluate(session_id: str):
         predictions = session["predictions"]
         problem_type = session["schema"]["problem_type"]
 
-        if problem_type == "classification":
-            metrics = {
-                "accuracy": round(accuracy_score(y_test, predictions), 4),
-                "precision": round(
-                    precision_score(
-                        y_test, predictions, average="weighted", zero_division=0
-                    ),
-                    4,
-                ),
-                "recall": round(
-                    recall_score(
-                        y_test, predictions, average="weighted", zero_division=0
-                    ),
-                    4,
-                ),
-                "f1": round(
-                    f1_score(y_test, predictions, average="weighted", zero_division=0),
-                    4,
-                ),
-            }
-        else:
-            rmse = mean_squared_error(y_test, predictions) ** 0.5
-            metrics = {
-                "r2": round(r2_score(y_test, predictions), 4),
-                "rmse": round(rmse, 4),
-                "mae": round(mean_absolute_error(y_test, predictions), 4),
-            }
+        metrics = compute_metrics(y_test, predictions, problem_type)
 
         session["evaluation"] = metrics
         return stage_response(session_id, stage, "done", metrics)
+    except Exception as e:
+        return stage_response(
+            session_id, stage, "failed", {"error": str(e), "required_stage": None}
+        )
+
+
+@app.post("/pipeline/{session_id}/compare")
+def compare(session_id: str):
+    stage = "compare"
+    session, error_response = load_session_or_fail(session_id, stage)
+    if error_response:
+        return error_response
+
+    try:
+        problem_type = session["schema"]["problem_type"]
+        X_train_t = session["preprocessed_data"]["X_train_t"]
+        X_test_t = session["preprocessed_data"]["X_test_t"]
+        y_train = session["split"]["y_train"]
+        y_test = session["split"]["y_test"]
+
+        results = []
+        for algorithm in MODEL_REGISTRY[problem_type]:
+            model = get_model(problem_type, algorithm)
+
+            start_time = time.perf_counter()
+            model.fit(X_train_t, y_train)
+            elapsed = time.perf_counter() - start_time
+
+            predictions = model.predict(X_test_t)
+            metrics = compute_metrics(y_test, predictions, problem_type)
+
+            results.append(
+                {
+                    "algorithm": algorithm,
+                    "metrics": metrics,
+                    "training_time_seconds": round(elapsed, 4),
+                }
+            )
+
+        rank_key = "accuracy" if problem_type == "classification" else "r2"
+        results.sort(key=lambda r: r["metrics"][rank_key], reverse=True)
+
+        summary = {"problem_type": problem_type, "results": results}
+        return stage_response(session_id, stage, "done", summary)
     except Exception as e:
         return stage_response(
             session_id, stage, "failed", {"error": str(e), "required_stage": None}

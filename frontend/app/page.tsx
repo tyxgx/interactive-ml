@@ -19,6 +19,7 @@ import {
   StageResponse,
   STAGE_ORDER,
   createInitialStages,
+  CompareResult,
 } from "@/lib/pipeline";
 
 export default function Home() {
@@ -36,6 +37,9 @@ export default function Home() {
     string,
     unknown
   > | null>(null);
+  const [compareResult, setCompareResult] = useState<CompareResult | null>(
+    null
+  );
   const [pipelineState, setPipelineState] = useState<{
     sessionId: string | null;
     stages: Record<StageName, StageState>;
@@ -83,6 +87,7 @@ export default function Home() {
   const resetPipeline = () => {
     setPipelineState({ sessionId: null, stages: createInitialStages() });
     setEvaluationResult(null);
+    setCompareResult(null);
     setValidAlgorithmIds(null);
   };
 
@@ -243,6 +248,19 @@ export default function Home() {
     }
   };
 
+  const handleCompareAll = async () => {
+    if (!pipelineState.sessionId) return;
+
+    const response = await fetch(
+      `${API_BASE}/pipeline/${pipelineState.sessionId}/compare`,
+      { method: "POST" }
+    );
+    const data: StageResponse = await response.json();
+    if (data.status === "done") {
+      setCompareResult(data.summary as unknown as CompareResult);
+    }
+  };
+
   return (
     <div className="flex flex-1 h-full">
       <Sidebar
@@ -284,12 +302,15 @@ export default function Home() {
           onRunStage={handleRunStage}
           onRunAll={handleRunAll}
           onReset={resetPipeline}
+          onCompareAll={handleCompareAll}
+          compareEnabled={pipelineState.stages.preprocess.status === "done"}
         />
 
         <OutputPanel
           algorithmName={trainedAlgorithmName}
           problemType={trainedProblemType}
           metrics={evaluationResult}
+          compareResult={compareResult}
         />
       </main>
     </div>

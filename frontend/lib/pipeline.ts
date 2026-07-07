@@ -38,6 +38,17 @@ export const STAGE_LABELS: Record<StageName, string> = {
   evaluate: "Evaluation",
 };
 
+export type CompareResultRow = {
+  algorithm: string;
+  metrics: Record<string, number>;
+  training_time_seconds: number;
+};
+
+export type CompareResult = {
+  problem_type: "classification" | "regression";
+  results: CompareResultRow[];
+};
+
 export function createInitialStages(): Record<StageName, StageState> {
   return STAGE_ORDER.reduce((acc, stageName) => {
     acc[stageName] = { status: "idle", summary: null };

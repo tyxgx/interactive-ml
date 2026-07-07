@@ -5,6 +5,8 @@ type PipelineProps = {
   onRunStage: (stageName: StageName) => void;
   onRunAll: () => void;
   onReset: () => void;
+  onCompareAll: () => void;
+  compareEnabled: boolean;
 };
 
 function SummaryEntries({ data }: { data: Record<string, unknown> }) {
@@ -38,6 +40,8 @@ export default function Pipeline({
   onRunStage,
   onRunAll,
   onReset,
+  onCompareAll,
+  compareEnabled,
 }: PipelineProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -50,6 +54,14 @@ export default function Pipeline({
             className="px-3 py-1.5 text-sm font-medium text-white bg-gray-900 rounded"
           >
             Run Entire Pipeline
+          </button>
+          <button
+            type="button"
+            disabled={!compareEnabled}
+            onClick={onCompareAll}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-gray-700 rounded disabled:bg-gray-300"
+          >
+            Compare All Algorithms
           </button>
           <button
             type="button"
