@@ -23,6 +23,11 @@ export default function TargetColumnSelector({
         onChange={(e) => onChange(e.target.value)}
         className="w-64 border border-gray-300 rounded px-3 py-2 text-sm"
       >
+        {value === "" && (
+          <option value="" disabled>
+            -- select target column --
+          </option>
+        )}
         {columns.map((column) => (
           <option key={column} value={column}>
             {column}

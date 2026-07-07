@@ -22,3 +22,9 @@ export type DatasetListItem = {
   default_target: string;
   columns: string[];
 };
+
+export type UploadResult = {
+  upload_id: string;
+  columns: string[];
+  shape: { rows: number; columns: number };
+};

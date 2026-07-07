@@ -7,6 +7,8 @@ from sklearn.datasets import (
     fetch_california_housing,
 )
 
+from uploads import get_upload
+
 TARGET_COLUMN = "target"
 
 
@@ -44,6 +46,13 @@ BUILTIN_DATASETS = {
 
 
 def get_dataset(name: str) -> pd.DataFrame:
+    if name.startswith("upload:"):
+        upload_id = name[len("upload:") :]
+        df = get_upload(upload_id)
+        if df is None:
+            raise ValueError(f"Unknown upload: {upload_id}")
+        return df
+
     if name not in BUILTIN_DATASETS:
         raise ValueError(f"Unknown dataset: {name}")
 

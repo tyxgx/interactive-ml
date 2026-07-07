@@ -22,8 +22,8 @@ export type StageState = {
 
 export const STAGE_ORDER: StageName[] = [
   "start",
-  "preprocess",
   "split",
+  "preprocess",
   "train",
   "predict",
   "evaluate",

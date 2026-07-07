@@ -4,20 +4,61 @@ type PipelineProps = {
   stages: Record<StageName, StageState>;
   onRunStage: (stageName: StageName) => void;
   onRunAll: () => void;
+  onReset: () => void;
 };
 
-export default function Pipeline({ stages, onRunStage, onRunAll }: PipelineProps) {
+function SummaryEntries({ data }: { data: Record<string, unknown> }) {
+  return (
+    <>
+      {Object.entries(data).map(([key, value]) => {
+        if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+          return (
+            <div key={key}>
+              <p>{key}:</p>
+              <div className="pl-3">
+                <SummaryEntries data={value as Record<string, unknown>} />
+              </div>
+            </div>
+          );
+        }
+
+        const displayValue = Array.isArray(value) ? value.join(", ") : String(value);
+        return (
+          <p key={key}>
+            {key}: {displayValue}
+          </p>
+        );
+      })}
+    </>
+  );
+}
+
+export default function Pipeline({
+  stages,
+  onRunStage,
+  onRunAll,
+  onReset,
+}: PipelineProps) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-gray-700">Pipeline</h3>
-        <button
-          type="button"
-          onClick={onRunAll}
-          className="px-3 py-1.5 text-sm font-medium text-white bg-gray-900 rounded"
-        >
-          Run Entire Pipeline
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onRunAll}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-gray-900 rounded"
+          >
+            Run Entire Pipeline
+          </button>
+          <button
+            type="button"
+            onClick={onReset}
+            className="px-3 py-1.5 text-sm font-medium text-gray-900 bg-gray-200 rounded"
+          >
+            Reset Pipeline
+          </button>
+        </div>
       </div>
 
       <ol className="flex flex-col gap-2">
@@ -49,12 +90,7 @@ export default function Pipeline({ stages, onRunStage, onRunAll }: PipelineProps
               {state.status !== "idle" && (
                 <div className="text-xs text-gray-600 flex flex-col gap-0.5">
                   <p>status: {state.status}</p>
-                  {state.summary &&
-                    Object.entries(state.summary).map(([key, value]) => (
-                      <p key={key}>
-                        {key}: {String(value)}
-                      </p>
-                    ))}
+                  {state.summary && <SummaryEntries data={state.summary} />}
                 </div>
               )}
             </li>

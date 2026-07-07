@@ -1,6 +1,9 @@
 import uuid
+from collections import OrderedDict
 
-SESSIONS: dict[str, dict] = {}
+MAX_SESSIONS = 50
+
+SESSIONS: "OrderedDict[str, dict]" = OrderedDict()
 
 
 def create_session() -> str:
@@ -12,11 +15,16 @@ def create_session() -> str:
         "X": None,
         "y": None,
         "preprocessed_data": None,
+        "preprocessor": None,
         "split": None,
         "model": None,
+        "algorithm": None,
         "predictions": None,
         "evaluation": None,
     }
+    SESSIONS.move_to_end(session_id)
+    if len(SESSIONS) > MAX_SESSIONS:
+        SESSIONS.popitem(last=False)
     return session_id
 
 

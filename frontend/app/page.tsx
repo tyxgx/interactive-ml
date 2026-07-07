@@ -4,13 +4,15 @@ import { useEffect, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 import DatasetSelector from "@/components/DatasetSelector";
 import TargetColumnSelector from "@/components/TargetColumnSelector";
+import UploadCsvInput from "@/components/UploadCsvInput";
 import LoadDatasetButton from "@/components/LoadDatasetButton";
 import RunButton from "@/components/RunButton";
 import Pipeline from "@/components/Pipeline";
 import DatasetPreview from "@/components/DatasetPreview";
 import OutputPanel from "@/components/OutputPanel";
 import { algorithms } from "@/lib/algorithms";
-import { DatasetResult, DatasetListItem } from "@/lib/dataset";
+import { API_BASE } from "@/lib/api";
+import { DatasetResult, DatasetListItem, UploadResult } from "@/lib/dataset";
 import {
   StageName,
   StageState,
@@ -21,12 +23,19 @@ import {
 
 export default function Home() {
   const [selectedId, setSelectedId] = useState(algorithms[0].id);
+  const [validAlgorithmIds, setValidAlgorithmIds] = useState<string[] | null>(
+    null
+  );
   const [datasets, setDatasets] = useState<DatasetListItem[]>([]);
   const [selectedDataset, setSelectedDataset] = useState("");
   const [selectedTargetColumn, setSelectedTargetColumn] = useState("");
   const [datasetResult, setDatasetResult] = useState<DatasetResult | null>(
     null
   );
+  const [evaluationResult, setEvaluationResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
   const [pipelineState, setPipelineState] = useState<{
     sessionId: string | null;
     stages: Record<StageName, StageState>;
@@ -37,7 +46,7 @@ export default function Home() {
 
   useEffect(() => {
     const loadDatasets = async () => {
-      const response = await fetch("http://localhost:8000/datasets");
+      const response = await fetch(`${API_BASE}/datasets`);
       const data: DatasetListItem[] = await response.json();
       setDatasets(data);
       if (data.length > 0) {
@@ -48,6 +57,11 @@ export default function Home() {
     loadDatasets();
   }, []);
 
+  const visibleAlgorithms =
+    validAlgorithmIds === null
+      ? algorithms
+      : algorithms.filter((algorithm) => validAlgorithmIds.includes(algorithm.id));
+
   const selectedAlgorithm =
     algorithms.find((algorithm) => algorithm.id === selectedId) ??
     algorithms[0];
@@ -56,25 +70,76 @@ export default function Home() {
     datasets.find((dataset) => dataset.name === selectedDataset)?.columns ??
     [];
 
+  const trainSummary = pipelineState.stages.train.summary as
+    | { algorithm?: string; problem_type?: string }
+    | null;
+  const trainedAlgorithmName = trainSummary?.algorithm
+    ? algorithms.find((a) => a.id === trainSummary.algorithm)?.name ??
+      trainSummary.algorithm
+    : null;
+  const trainedProblemType = trainSummary?.problem_type ?? null;
+  const isAlgorithmLocked = pipelineState.stages.train.status === "done";
+
+  const resetPipeline = () => {
+    setPipelineState({ sessionId: null, stages: createInitialStages() });
+    setEvaluationResult(null);
+    setValidAlgorithmIds(null);
+  };
+
   const handleDatasetChange = (name: string) => {
+    if (pipelineState.sessionId) resetPipeline();
     setSelectedDataset(name);
     const dataset = datasets.find((d) => d.name === name);
     setSelectedTargetColumn(dataset?.default_target ?? "");
   };
 
+  const handleTargetColumnChange = (column: string) => {
+    if (pipelineState.sessionId) resetPipeline();
+    setSelectedTargetColumn(column);
+  };
+
+  const handleAlgorithmSelect = (id: string) => {
+    if (pipelineState.sessionId) resetPipeline();
+    setSelectedId(id);
+  };
+
   const handleLoadDataset = async () => {
     const response = await fetch(
-      `http://localhost:8000/dataset/${selectedDataset}?target_column=${selectedTargetColumn}`
+      `${API_BASE}/dataset/${encodeURIComponent(
+        selectedDataset
+      )}?target_column=${encodeURIComponent(selectedTargetColumn)}`
     );
     const data = await response.json();
     setDatasetResult(data);
+  };
+
+  const handleUpload = async (file: File) => {
+    if (pipelineState.sessionId) resetPipeline();
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch(`${API_BASE}/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    const data: UploadResult = await response.json();
+
+    const datasetName = `upload:${data.upload_id}`;
+    setDatasets((prev) => [
+      ...prev.filter((d) => !d.name.startsWith("upload:")),
+      { name: datasetName, default_target: "", columns: data.columns },
+    ]);
+    setSelectedDataset(datasetName);
+    setSelectedTargetColumn("");
   };
 
   const handleRun = () => {};
 
   const runStage = async (
     stageName: StageName,
-    sessionIdOverride?: string | null
+    sessionIdOverride?: string | null,
+    algorithmOverride?: string
   ): Promise<StageResponse> => {
     setPipelineState((prev) => ({
       ...prev,
@@ -85,11 +150,12 @@ export default function Home() {
     }));
 
     const activeSessionId = sessionIdOverride ?? pipelineState.sessionId;
+    const activeAlgorithm = algorithmOverride ?? selectedId;
 
     const url =
       stageName === "start"
-        ? "http://localhost:8000/pipeline/start"
-        : `http://localhost:8000/pipeline/${activeSessionId}/${stageName}`;
+        ? `${API_BASE}/pipeline/start`
+        : `${API_BASE}/pipeline/${activeSessionId}/${stageName}`;
 
     const options: RequestInit =
       stageName === "start"
@@ -100,6 +166,12 @@ export default function Home() {
               dataset: selectedDataset,
               target_column: selectedTargetColumn,
             }),
+          }
+        : stageName === "train"
+        ? {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ algorithm: activeAlgorithm }),
           }
         : { method: "POST" };
 
@@ -114,6 +186,25 @@ export default function Home() {
       },
     }));
 
+    if (stageName === "start" && data.status === "done") {
+      const schema = data.summary.schema as
+        | { problem_type?: string }
+        | undefined;
+      const problemType = schema?.problem_type;
+      if (problemType) {
+        const algoResponse = await fetch(
+          `${API_BASE}/algorithms/${problemType}`
+        );
+        const algoIds: string[] = await algoResponse.json();
+        setValidAlgorithmIds(algoIds);
+        setSelectedId((prev) => (algoIds.includes(prev) ? prev : algoIds[0]));
+      }
+    }
+
+    if (stageName === "evaluate" && data.status === "done") {
+      setEvaluationResult(data.summary);
+    }
+
     return data;
   };
 
@@ -123,12 +214,29 @@ export default function Home() {
 
   const handleRunAll = async () => {
     let currentSessionId: string | null = pipelineState.sessionId;
+    let currentAlgorithm = selectedId;
 
     for (const stageName of STAGE_ORDER) {
-      const data = await runStage(stageName, currentSessionId);
+      const data = await runStage(stageName, currentSessionId, currentAlgorithm);
+
       if (stageName === "start") {
+        if (data.status !== "done") break;
         currentSessionId = data.session_id;
+
+        const schema = data.summary.schema as
+          | { problem_type?: string }
+          | undefined;
+        if (schema?.problem_type) {
+          const algoResponse = await fetch(
+            `${API_BASE}/algorithms/${schema.problem_type}`
+          );
+          const algoIds: string[] = await algoResponse.json();
+          if (!algoIds.includes(currentAlgorithm)) {
+            currentAlgorithm = algoIds[0];
+          }
+        }
       }
+
       if (data.status === "failed") {
         break;
       }
@@ -138,9 +246,10 @@ export default function Home() {
   return (
     <div className="flex flex-1 h-full">
       <Sidebar
-        algorithms={algorithms}
+        algorithms={visibleAlgorithms}
         selectedId={selectedId}
-        onSelect={setSelectedId}
+        onSelect={handleAlgorithmSelect}
+        disabled={isAlgorithmLocked}
       />
       <main className="w-4/5 p-6 flex flex-col gap-6">
         <div>
@@ -161,8 +270,9 @@ export default function Home() {
           <TargetColumnSelector
             columns={selectedDatasetColumns}
             value={selectedTargetColumn}
-            onChange={setSelectedTargetColumn}
+            onChange={handleTargetColumnChange}
           />
+          <UploadCsvInput onUpload={handleUpload} />
           <LoadDatasetButton onClick={handleLoadDataset} />
           <RunButton onClick={handleRun} />
         </div>
@@ -173,9 +283,14 @@ export default function Home() {
           stages={pipelineState.stages}
           onRunStage={handleRunStage}
           onRunAll={handleRunAll}
+          onReset={resetPipeline}
         />
 
-        <OutputPanel />
+        <OutputPanel
+          algorithmName={trainedAlgorithmName}
+          problemType={trainedProblemType}
+          metrics={evaluationResult}
+        />
       </main>
     </div>
   );
