@@ -2,12 +2,14 @@ import io
 import os
 import time
 
+import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sklearn.metrics import (
     accuracy_score,
+    confusion_matrix,
     f1_score,
     mean_absolute_error,
     mean_squared_error,
@@ -15,10 +17,10 @@ from sklearn.metrics import (
     r2_score,
     recall_score,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV, train_test_split
 
 from datasets import BUILTIN_DATASETS, get_dataset
-from models import MODEL_REGISTRY, get_model
+from models import MODEL_REGISTRY, get_model, get_param_grid
 from preprocessing import build_preprocessor
 from schema import build_dataset_info
 from pipeline_state import create_session, get_session, require_keys
@@ -49,6 +51,7 @@ STAGE_REQUIREMENTS = {
     "predict": ["model"],
     "evaluate": ["predictions"],
     "compare": ["preprocessed_data"],
+    "tune": ["preprocessed_data"],
 }
 
 
@@ -255,6 +258,34 @@ def _simple_params(params: dict) -> dict:
     }
 
 
+def _feature_signal(model, feature_names: list[str]) -> list[dict] | None:
+    if hasattr(model, "feature_importances_"):
+        importances = model.feature_importances_
+        pairs = list(zip(feature_names, importances))
+        pairs.sort(key=lambda p: abs(p[1]), reverse=True)
+        return [
+            {"feature": name, "importance": round(float(value), 4)}
+            for name, value in pairs[:10]
+        ]
+
+    if hasattr(model, "coef_"):
+        coef = np.asarray(model.coef_)
+        if coef.ndim == 2 and coef.shape[0] > 1:
+            # multi-class one-vs-rest: signed coefficients would cancel out
+            # across classes, so report mean absolute magnitude instead.
+            values = np.abs(coef).mean(axis=0)
+        else:
+            values = coef.reshape(-1)
+        pairs = list(zip(feature_names, values))
+        pairs.sort(key=lambda p: abs(p[1]), reverse=True)
+        return [
+            {"feature": name, "importance": round(float(value), 4)}
+            for name, value in pairs[:10]
+        ]
+
+    return None
+
+
 @app.post("/pipeline/{session_id}/train")
 def train(session_id: str, body: TrainRequest):
     stage = "train"
@@ -276,12 +307,23 @@ def train(session_id: str, body: TrainRequest):
         session["model"] = model
         session["algorithm"] = body.algorithm
 
+        feature_names = list(session["preprocessor"].get_feature_names_out())
+        feature_signal = _feature_signal(model, feature_names)
+
         summary = {
             "algorithm": body.algorithm,
             "problem_type": problem_type,
             "hyperparameters": _simple_params(model.get_params()),
             "training_time_seconds": round(elapsed, 4),
         }
+        if feature_signal is not None:
+            signal_key = (
+                "feature_importances"
+                if hasattr(model, "feature_importances_")
+                else "coefficients"
+            )
+            summary[signal_key] = feature_signal
+
         return stage_response(session_id, stage, "done", summary)
     except Exception as e:
         return stage_response(
@@ -358,6 +400,23 @@ def evaluate(session_id: str):
 
         metrics = compute_metrics(y_test, predictions, problem_type)
 
+        if problem_type == "classification":
+            metrics = {
+                **metrics,
+                "confusion_matrix": confusion_matrix(y_test, predictions).tolist(),
+                "confusion_matrix_labels": sorted(set(y_test.tolist())),
+            }
+        else:
+            y_test_list = y_test.tolist()
+            predictions_list = list(predictions)
+            metrics = {
+                **metrics,
+                "actual_vs_predicted": [
+                    {"actual": round(float(a), 4), "predicted": round(float(p), 4)}
+                    for a, p in zip(y_test_list[:20], predictions_list[:20])
+                ],
+            }
+
         session["evaluation"] = metrics
         return stage_response(session_id, stage, "done", metrics)
     except Exception as e:
@@ -403,6 +462,41 @@ def compare(session_id: str):
         results.sort(key=lambda r: r["metrics"][rank_key], reverse=True)
 
         summary = {"problem_type": problem_type, "results": results}
+        return stage_response(session_id, stage, "done", summary)
+    except Exception as e:
+        return stage_response(
+            session_id, stage, "failed", {"error": str(e), "required_stage": None}
+        )
+
+
+@app.post("/pipeline/{session_id}/tune")
+def tune(session_id: str, body: TrainRequest):
+    stage = "tune"
+    session, error_response = load_session_or_fail(session_id, stage)
+    if error_response:
+        return error_response
+
+    try:
+        problem_type = session["schema"]["problem_type"]
+        model = get_model(problem_type, body.algorithm)
+        param_grid = get_param_grid(problem_type, body.algorithm)
+
+        X_train_t = session["preprocessed_data"]["X_train_t"]
+        y_train = session["split"]["y_train"]
+
+        search = GridSearchCV(model, param_grid, cv=5)
+        search.fit(X_train_t, y_train)
+
+        session["model"] = search.best_estimator_
+        session["algorithm"] = body.algorithm
+
+        summary = {
+            "algorithm": body.algorithm,
+            "problem_type": problem_type,
+            "best_params": search.best_params_,
+            "best_cv_score": round(search.best_score_, 4),
+            "cv_folds": 5,
+        }
         return stage_response(session_id, stage, "done", summary)
     except Exception as e:
         return stage_response(

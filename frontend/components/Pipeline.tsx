@@ -7,6 +7,8 @@ type PipelineProps = {
   onReset: () => void;
   onCompareAll: () => void;
   compareEnabled: boolean;
+  onTune: () => void;
+  tuneEnabled: boolean;
 };
 
 function SummaryEntries({ data }: { data: Record<string, unknown> }) {
@@ -42,6 +44,8 @@ export default function Pipeline({
   onReset,
   onCompareAll,
   compareEnabled,
+  onTune,
+  tuneEnabled,
 }: PipelineProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -89,14 +93,26 @@ export default function Pipeline({
                 <span className="text-sm text-gray-700">
                   {index + 1}. {STAGE_LABELS[stageName]}
                 </span>
-                <button
-                  type="button"
-                  disabled={isDisabled}
-                  onClick={() => onRunStage(stageName)}
-                  className="px-3 py-1 text-sm font-medium text-white bg-gray-700 rounded disabled:bg-gray-300"
-                >
-                  Run
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={isDisabled}
+                    onClick={() => onRunStage(stageName)}
+                    className="px-3 py-1 text-sm font-medium text-white bg-gray-700 rounded disabled:bg-gray-300"
+                  >
+                    Run
+                  </button>
+                  {stageName === "train" && (
+                    <button
+                      type="button"
+                      disabled={!tuneEnabled}
+                      onClick={onTune}
+                      className="px-3 py-1 text-sm font-medium text-white bg-gray-500 rounded disabled:bg-gray-300"
+                    >
+                      Tune Hyperparameters
+                    </button>
+                  )}
+                </div>
               </div>
 
               {state.status !== "idle" && (

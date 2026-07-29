@@ -25,3 +25,25 @@ MODEL_REGISTRY = {
 
 def get_model(problem_type: str, algorithm: str):
     return clone(MODEL_REGISTRY[problem_type][algorithm])
+
+
+PARAM_GRIDS = {
+    "classification": {
+        "logistic_regression": {"C": [0.1, 1, 10]},
+        "decision_tree": {"max_depth": [3, 5, 10], "min_samples_split": [2, 5]},
+        "random_forest": {"n_estimators": [50, 100], "max_depth": [5, 10]},
+        "knn": {"n_neighbors": [3, 5, 7]},
+        "svm": {"C": [0.1, 1, 10], "kernel": ["linear", "rbf"]},
+    },
+    "regression": {
+        "linear_regression": {"fit_intercept": [True, False]},
+        "decision_tree": {"max_depth": [3, 5, 10], "min_samples_split": [2, 5]},
+        "random_forest": {"n_estimators": [50, 100], "max_depth": [5, 10]},
+        "knn": {"n_neighbors": [3, 5, 7]},
+        "svm": {"C": [0.1, 1, 10], "kernel": ["linear", "rbf"]},
+    },
+}
+
+
+def get_param_grid(problem_type: str, algorithm: str) -> dict:
+    return PARAM_GRIDS[problem_type][algorithm]

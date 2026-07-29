@@ -261,6 +261,29 @@ export default function Home() {
     }
   };
 
+  const handleTune = async () => {
+    if (!pipelineState.sessionId) return;
+
+    const response = await fetch(
+      `${API_BASE}/pipeline/${pipelineState.sessionId}/tune`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ algorithm: selectedId }),
+      }
+    );
+    const data: StageResponse = await response.json();
+    if (data.status === "done") {
+      setPipelineState((prev) => ({
+        ...prev,
+        stages: {
+          ...prev.stages,
+          train: { status: "done", summary: data.summary },
+        },
+      }));
+    }
+  };
+
   return (
     <div className="flex flex-1 h-full">
       <Sidebar
@@ -304,6 +327,8 @@ export default function Home() {
           onReset={resetPipeline}
           onCompareAll={handleCompareAll}
           compareEnabled={pipelineState.stages.preprocess.status === "done"}
+          onTune={handleTune}
+          tuneEnabled={pipelineState.stages.preprocess.status === "done"}
         />
 
         <OutputPanel
@@ -311,6 +336,7 @@ export default function Home() {
           problemType={trainedProblemType}
           metrics={evaluationResult}
           compareResult={compareResult}
+          trainSummary={pipelineState.stages.train.summary}
         />
       </main>
     </div>

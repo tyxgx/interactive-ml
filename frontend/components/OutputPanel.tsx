@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { algorithms } from "@/lib/algorithms";
 import { CompareResult } from "@/lib/pipeline";
 
@@ -15,11 +16,26 @@ function algorithmName(id: string): string {
   return algorithms.find((a) => a.id === id)?.name ?? id;
 }
 
+type FeatureSignalRow = { feature: string; importance: number };
+
+type ActualPredictedRow = { actual: number; predicted: number };
+
+const METRIC_DISPLAY_KEYS = new Set([
+  "accuracy",
+  "precision",
+  "recall",
+  "f1",
+  "r2",
+  "rmse",
+  "mae",
+]);
+
 type OutputPanelProps = {
   algorithmName: string | null;
   problemType: string | null;
   metrics: Record<string, unknown> | null;
   compareResult: CompareResult | null;
+  trainSummary: Record<string, unknown> | null;
 };
 
 export default function OutputPanel({
@@ -27,10 +43,33 @@ export default function OutputPanel({
   problemType,
   metrics,
   compareResult,
+  trainSummary,
 }: OutputPanelProps) {
   const metricKeys = compareResult?.results[0]
     ? Object.keys(compareResult.results[0].metrics)
     : [];
+
+  const displayMetrics = metrics
+    ? Object.entries(metrics).filter(([key]) => METRIC_DISPLAY_KEYS.has(key))
+    : [];
+
+  const confusionMatrix = metrics?.confusion_matrix as number[][] | undefined;
+  const confusionMatrixLabels = metrics?.confusion_matrix_labels as
+    | (string | number)[]
+    | undefined;
+
+  const actualVsPredicted = metrics?.actual_vs_predicted as
+    | ActualPredictedRow[]
+    | undefined;
+
+  const featureSignal = (trainSummary?.feature_importances ??
+    trainSummary?.coefficients) as FeatureSignalRow[] | undefined;
+  const featureSignalLabel = trainSummary?.feature_importances
+    ? "Feature Importances"
+    : "Coefficients";
+  const maxAbsImportance = featureSignal
+    ? Math.max(...featureSignal.map((row) => Math.abs(row.importance)), 1e-9)
+    : 0;
 
   return (
     <div className="flex flex-col gap-3">
@@ -40,11 +79,117 @@ export default function OutputPanel({
           <div className="flex flex-col gap-1">
             {trainedAlgorithmName && <p>Algorithm: {trainedAlgorithmName}</p>}
             {problemType && <p>Problem Type: {problemType}</p>}
-            {Object.entries(metrics).map(([key, value]) => (
+            {displayMetrics.map(([key, value]) => (
               <p key={key}>
                 {METRIC_LABELS[key] ?? key}: {String(value)}
               </p>
             ))}
+          </div>
+        )}
+
+        {featureSignal && featureSignal.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="font-medium">{featureSignalLabel}</p>
+            <div className="flex flex-col gap-1.5">
+              {featureSignal.map((row) => {
+                const widthPct =
+                  (Math.abs(row.importance) / maxAbsImportance) * 100;
+                return (
+                  <div key={row.feature} className="flex items-center gap-2">
+                    <span className="w-40 shrink-0 truncate text-xs text-gray-600">
+                      {row.feature}
+                    </span>
+                    <div className="flex-1 bg-gray-100 rounded h-4 overflow-hidden">
+                      <div
+                        className={
+                          row.importance < 0 ? "bg-gray-400 h-4" : "bg-gray-700 h-4"
+                        }
+                        style={{ width: `${widthPct}%` }}
+                      />
+                    </div>
+                    <span className="w-16 shrink-0 text-xs text-gray-600 text-right">
+                      {row.importance}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {confusionMatrix && confusionMatrixLabels && (
+          <div className="flex flex-col gap-2">
+            <p className="font-medium">Confusion Matrix</p>
+            <div
+              className="grid w-fit"
+              style={{
+                gridTemplateColumns: `repeat(${confusionMatrixLabels.length + 1}, minmax(2.5rem, 1fr))`,
+              }}
+            >
+              <div className="border border-gray-300 px-2 py-1 bg-gray-50" />
+              {confusionMatrixLabels.map((label) => (
+                <div
+                  key={`col-${label}`}
+                  className="border border-gray-300 px-2 py-1 bg-gray-50 text-xs font-medium text-center"
+                >
+                  {label}
+                </div>
+              ))}
+              {confusionMatrix.map((row, rowIndex) => (
+                <Fragment key={`row-${rowIndex}`}>
+                  <div className="border border-gray-300 px-2 py-1 bg-gray-50 text-xs font-medium text-center">
+                    {confusionMatrixLabels[rowIndex]}
+                  </div>
+                  {row.map((cell, colIndex) => (
+                    <div
+                      key={`cell-${rowIndex}-${colIndex}`}
+                      className={
+                        rowIndex === colIndex
+                          ? "border border-gray-300 px-2 py-1 text-center bg-gray-100 font-medium"
+                          : "border border-gray-300 px-2 py-1 text-center"
+                      }
+                    >
+                      {cell}
+                    </div>
+                  ))}
+                </Fragment>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500">
+              Rows = actual class, columns = predicted class.
+            </p>
+          </div>
+        )}
+
+        {actualVsPredicted && actualVsPredicted.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="font-medium">
+              Actual vs Predicted (first {actualVsPredicted.length} test points)
+            </p>
+            <table className="border border-gray-300 border-collapse w-fit">
+              <thead>
+                <tr>
+                  <th className="border border-gray-300 px-2 py-1 text-left">
+                    Actual
+                  </th>
+                  <th className="border border-gray-300 px-2 py-1 text-left">
+                    Predicted
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {actualVsPredicted.map((row, index) => (
+                  <tr key={index}>
+                    <td className="border border-gray-300 px-2 py-1">
+                      {row.actual}
+                    </td>
+                    <td className="border border-gray-300 px-2 py-1">
+                      {row.predicted}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
