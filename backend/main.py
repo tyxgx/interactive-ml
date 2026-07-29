@@ -4,7 +4,7 @@ import time
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sklearn.metrics import (
@@ -18,7 +18,9 @@ from sklearn.metrics import (
     recall_score,
 )
 from sklearn.model_selection import GridSearchCV, train_test_split
+from groq import Groq
 
+import rag
 from datasets import BUILTIN_DATASETS, get_dataset
 from models import MODEL_REGISTRY, get_model, get_param_grid
 from preprocessing import build_preprocessor
@@ -27,6 +29,16 @@ from pipeline_state import create_session, get_session, require_keys
 from uploads import create_upload
 
 app = FastAPI()
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+ASK_MODEL = "llama-3.1-8b-instant"
+MAX_QUESTIONS_PER_SESSION = 20
+ASK_RATE_LIMIT_FALLBACK: dict[str, int] = {}
+
+
+@app.on_event("startup")
+def on_startup():
+    rag.build_index()
 
 ALLOWED_ORIGINS = [
     origin.strip()
@@ -526,3 +538,88 @@ def tune(session_id: str, body: TrainRequest):
         return stage_response(
             session_id, stage, "failed", {"error": str(e), "required_stage": None}
         )
+
+
+class AskRequest(BaseModel):
+    question: str
+    session_id: str | None = None
+
+
+def _session_context_summary(session: dict) -> str | None:
+    algorithm = session.get("algorithm")
+    schema = session.get("schema") or {}
+    problem_type = schema.get("problem_type")
+    evaluation = session.get("evaluation")
+
+    if not algorithm:
+        return None
+
+    parts = [f"The user's current model is '{algorithm}' ({problem_type})."]
+    if evaluation:
+        metrics = {
+            key: value
+            for key, value in evaluation.items()
+            if isinstance(value, (int, float, str))
+        }
+        if metrics:
+            parts.append(f"Its latest evaluation metrics: {metrics}.")
+
+    return " ".join(parts)
+
+
+def _check_rate_limit(session: dict | None, fallback_key: str) -> bool:
+    if session is not None:
+        session["ask_count"] = session.get("ask_count", 0) + 1
+        return session["ask_count"] <= MAX_QUESTIONS_PER_SESSION
+
+    count = ASK_RATE_LIMIT_FALLBACK.get(fallback_key, 0) + 1
+    ASK_RATE_LIMIT_FALLBACK[fallback_key] = count
+    return count <= MAX_QUESTIONS_PER_SESSION
+
+
+@app.post("/ask")
+def ask(body: AskRequest, request: Request):
+    if not GROQ_API_KEY:
+        return {"error": "RAG assistant not configured"}
+
+    session = get_session(body.session_id) if body.session_id else None
+    fallback_key = body.session_id or (request.client.host if request.client else "anonymous")
+
+    if not _check_rate_limit(session, fallback_key):
+        return {
+            "error": "You've reached the limit of 20 questions for this session. "
+            "Start a new session to keep asking."
+        }
+
+    try:
+        docs = rag.retrieve(body.question, top_k=3)
+
+        context_blocks = [f"### {doc['title']}\n{doc['text']}" for doc in docs]
+        session_context = _session_context_summary(session) if session else None
+        if session_context:
+            context_blocks.append(f"### Current session state\n{session_context}")
+
+        context_text = "\n\n".join(context_blocks) if context_blocks else "(no context available)"
+
+        system_prompt = (
+            "You are an assistant embedded in an educational machine learning "
+            "pipeline app. Answer the user's question using ONLY the context "
+            "provided below. Be concise. If the context does not cover the "
+            "question, say so honestly instead of guessing or using outside "
+            "knowledge.\n\n" + context_text
+        )
+
+        client = Groq(api_key=GROQ_API_KEY)
+        response = client.chat.completions.create(
+            model=ASK_MODEL,
+            max_tokens=400,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": body.question},
+            ],
+        )
+        answer = response.choices[0].message.content
+
+        return {"answer": answer, "sources": [doc["title"] for doc in docs]}
+    except Exception as e:
+        return {"error": str(e)}

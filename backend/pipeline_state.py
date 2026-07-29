@@ -21,6 +21,7 @@ def create_session() -> str:
         "algorithm": None,
         "predictions": None,
         "evaluation": None,
+        "ask_count": 0,
     }
     SESSIONS.move_to_end(session_id)
     if len(SESSIONS) > MAX_SESSIONS:

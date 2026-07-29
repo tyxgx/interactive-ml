@@ -10,6 +10,7 @@ import RunButton from "@/components/RunButton";
 import Pipeline from "@/components/Pipeline";
 import DatasetPreview from "@/components/DatasetPreview";
 import OutputPanel from "@/components/OutputPanel";
+import AskAssistant from "@/components/AskAssistant";
 import { algorithms } from "@/lib/algorithms";
 import { API_BASE } from "@/lib/api";
 import { DatasetResult, DatasetListItem, UploadResult } from "@/lib/dataset";
@@ -338,6 +339,8 @@ export default function Home() {
           compareResult={compareResult}
           trainSummary={pipelineState.stages.train.summary}
         />
+
+        <AskAssistant sessionId={pipelineState.sessionId} />
       </main>
     </div>
   );
