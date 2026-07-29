@@ -286,6 +286,26 @@ def _feature_signal(model, feature_names: list[str]) -> list[dict] | None:
     return None
 
 
+def _loss_curve_summary(model) -> dict | None:
+    loss_curve = getattr(model, "loss_curve_", None)
+    if loss_curve is None:
+        return None
+
+    if len(loss_curve) > 50:
+        step = len(loss_curve) / 50
+        sampled = [loss_curve[int(i * step)] for i in range(50)]
+    else:
+        sampled = list(loss_curve)
+
+    architecture = " -> ".join(str(n) for n in model.hidden_layer_sizes) + " hidden units"
+
+    return {
+        "loss_curve": [round(float(v), 6) for v in sampled],
+        "architecture": architecture,
+        "epochs_run": len(loss_curve),
+    }
+
+
 @app.post("/pipeline/{session_id}/train")
 def train(session_id: str, body: TrainRequest):
     stage = "train"
@@ -323,6 +343,10 @@ def train(session_id: str, body: TrainRequest):
                 else "coefficients"
             )
             summary[signal_key] = feature_signal
+
+        loss_curve_summary = _loss_curve_summary(model)
+        if loss_curve_summary is not None:
+            summary.update(loss_curve_summary)
 
         return stage_response(session_id, stage, "done", summary)
     except Exception as e:

@@ -41,4 +41,10 @@ export const algorithms: Algorithm[] = [
     description:
       "Finds the optimal boundary that separates classes with the maximum margin.",
   },
+  {
+    id: "neural_network",
+    name: "Neural Network",
+    description:
+      "A multi-layer perceptron that learns non-linear patterns through layers of connected units.",
+  },
 ];

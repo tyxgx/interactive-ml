@@ -16,6 +16,33 @@ function algorithmName(id: string): string {
   return algorithms.find((a) => a.id === id)?.name ?? id;
 }
 
+function LossCurveSparkline({ values }: { values: number[] }) {
+  const width = 200;
+  const height = 50;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  const points = values
+    .map((value, index) => {
+      const x = (index / (values.length - 1)) * width;
+      const y = height - ((value - min) / range) * height;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(" ");
+
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      className="text-gray-700"
+    >
+      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 type FeatureSignalRow = { feature: string; importance: number };
 
 type ActualPredictedRow = { actual: number; predicted: number };
@@ -71,6 +98,10 @@ export default function OutputPanel({
     ? Math.max(...featureSignal.map((row) => Math.abs(row.importance)), 1e-9)
     : 0;
 
+  const lossCurve = trainSummary?.loss_curve as number[] | undefined;
+  const architecture = trainSummary?.architecture as string | undefined;
+  const epochsRun = trainSummary?.epochs_run as number | undefined;
+
   return (
     <div className="flex flex-col gap-3">
       <h3 className="text-sm font-medium text-gray-700 mb-1">Output</h3>
@@ -84,6 +115,16 @@ export default function OutputPanel({
                 {METRIC_LABELS[key] ?? key}: {String(value)}
               </p>
             ))}
+          </div>
+        )}
+
+        {lossCurve && lossCurve.length > 1 && (
+          <div className="flex flex-col gap-2">
+            <p className="font-medium">Training Loss Curve</p>
+            <p className="text-xs text-gray-600">
+              {architecture} &middot; {epochsRun} epochs
+            </p>
+            <LossCurveSparkline values={lossCurve} />
           </div>
         )}
 
