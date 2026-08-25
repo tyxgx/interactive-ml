@@ -13,6 +13,20 @@ type PipelineProps = {
   tuneEnabled: boolean;
 };
 
+function formatArrayValue(value: unknown[]): string {
+  const MAX_ITEMS = 5;
+  const shown = value.slice(0, MAX_ITEMS).map((item) => {
+    if (item !== null && typeof item === "object") {
+      return `{ ${Object.entries(item as Record<string, unknown>)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(", ")} }`;
+    }
+    return String(item);
+  });
+  const remaining = value.length - MAX_ITEMS;
+  return remaining > 0 ? `${shown.join(", ")}, … (+${remaining} more)` : shown.join(", ");
+}
+
 function SummaryEntries({ data }: { data: Record<string, unknown> }) {
   return (
     <>
@@ -28,7 +42,7 @@ function SummaryEntries({ data }: { data: Record<string, unknown> }) {
           );
         }
 
-        const displayValue = Array.isArray(value) ? value.join(", ") : String(value);
+        const displayValue = Array.isArray(value) ? formatArrayValue(value) : String(value);
         return (
           <p key={key}>
             {key}: {displayValue}

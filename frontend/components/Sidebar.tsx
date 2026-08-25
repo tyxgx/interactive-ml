@@ -26,6 +26,11 @@ export default function Sidebar({
       <h2 className="px-4 pt-4 pb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
         Algorithms
       </h2>
+      {disabled && (
+        <p className="px-4 pb-2 text-xs text-muted-foreground leading-snug">
+          Locked while a trained model is loaded — reset the pipeline to switch algorithms.
+        </p>
+      )}
       <ul className="flex flex-col gap-0.5 px-2">
         {algorithms.map((algorithm) => {
           const isSelected = algorithm.id === selectedId;
@@ -36,6 +41,11 @@ export default function Sidebar({
                 disabled={disabled}
                 onClick={() => onSelect(algorithm.id)}
                 aria-current={isSelected ? "true" : undefined}
+                title={
+                  disabled
+                    ? "Reset the pipeline to switch algorithms"
+                    : undefined
+                }
                 className={`w-full text-left px-3 py-2 text-sm rounded-md cursor-pointer transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   isSelected
                     ? "bg-primary-soft text-primary font-semibold"
