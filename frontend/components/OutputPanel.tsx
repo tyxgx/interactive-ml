@@ -1,6 +1,9 @@
 import { Fragment } from "react";
+import { BarChart3, TrendingUp, Grid3x3, Table2, GitCompare } from "lucide-react";
 import { algorithms } from "@/lib/algorithms";
 import { CompareResult } from "@/lib/pipeline";
+import { card } from "@/lib/ui";
+import DecisionBoundaryPlot from "./DecisionBoundaryPlot";
 
 const METRIC_LABELS: Record<string, string> = {
   accuracy: "Accuracy",
@@ -16,29 +19,58 @@ function algorithmName(id: string): string {
   return algorithms.find((a) => a.id === id)?.name ?? id;
 }
 
+function SectionHeading({
+  icon: Icon,
+  children,
+}: {
+  icon: typeof BarChart3;
+  children: React.ReactNode;
+}) {
+  return (
+    <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+      <Icon className="w-4 h-4 text-primary" strokeWidth={2} />
+      {children}
+    </p>
+  );
+}
+
 function LossCurveSparkline({ values }: { values: number[] }) {
-  const width = 200;
-  const height = 50;
+  const width = 320;
+  const height = 96;
+  const padding = 6;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const range = max - min || 1;
 
-  const points = values
-    .map((value, index) => {
-      const x = (index / (values.length - 1)) * width;
-      const y = height - ((value - min) / range) * height;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
+  const points = values.map((value, index) => {
+    const x = (index / (values.length - 1)) * (width - padding * 2) + padding;
+    const y =
+      height - padding - ((value - min) / range) * (height - padding * 2);
+    return { x, y };
+  });
+
+  const linePoints = points.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
+  const areaPoints = `${padding},${height - padding} ${linePoints} ${
+    width - padding
+  },${height - padding}`;
 
   return (
     <svg
-      width={width}
+      width="100%"
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className="text-gray-700"
+      className="text-primary"
+      preserveAspectRatio="none"
     >
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1.5" />
+      <polygon points={areaPoints} fill="currentColor" opacity="0.08" />
+      <polyline
+        points={linePoints}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -63,6 +95,8 @@ type OutputPanelProps = {
   metrics: Record<string, unknown> | null;
   compareResult: CompareResult | null;
   trainSummary: Record<string, unknown> | null;
+  sessionId: string | null;
+  numericFeatures: string[];
 };
 
 export default function OutputPanel({
@@ -71,6 +105,8 @@ export default function OutputPanel({
   metrics,
   compareResult,
   trainSummary,
+  sessionId,
+  numericFeatures,
 }: OutputPanelProps) {
   const metricKeys = compareResult?.results[0]
     ? Object.keys(compareResult.results[0].metrics)
@@ -102,53 +138,90 @@ export default function OutputPanel({
   const architecture = trainSummary?.architecture as string | undefined;
   const epochsRun = trainSummary?.epochs_run as number | undefined;
 
+  const hasContent =
+    metrics ||
+    trainSummary ||
+    (lossCurve && lossCurve.length > 1) ||
+    (featureSignal && featureSignal.length > 0) ||
+    (confusionMatrix && confusionMatrixLabels) ||
+    (actualVsPredicted && actualVsPredicted.length > 0) ||
+    compareResult;
+
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-sm font-medium text-gray-700 mb-1">Output</h3>
-      <div className="border border-gray-200 rounded min-h-32 p-3 text-sm text-gray-700 flex flex-col gap-4">
+      <h3 className="text-sm font-semibold text-foreground">Output</h3>
+      <div className={`${card} min-h-32 p-5 flex flex-col gap-6`}>
+        {!hasContent && (
+          <p className="text-sm text-muted-foreground">
+            Run the pipeline to see metrics and visualizations here.
+          </p>
+        )}
+
         {metrics && (
-          <div className="flex flex-col gap-1">
-            {trainedAlgorithmName && <p>Algorithm: {trainedAlgorithmName}</p>}
-            {problemType && <p>Problem Type: {problemType}</p>}
-            {displayMetrics.map(([key, value]) => (
-              <p key={key}>
-                {METRIC_LABELS[key] ?? key}: {String(value)}
-              </p>
-            ))}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {trainedAlgorithmName && (
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-primary-soft text-primary">
+                  {trainedAlgorithmName}
+                </span>
+              )}
+              {problemType && (
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-surface-sunken text-muted-foreground border border-border">
+                  {problemType}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {displayMetrics.map(([key, value]) => (
+                <div
+                  key={key}
+                  className="rounded-md border border-border bg-surface-sunken px-3 py-2.5"
+                >
+                  <p className="text-xs text-muted-foreground">
+                    {METRIC_LABELS[key] ?? key}
+                  </p>
+                  <p className="font-mono text-lg font-semibold text-foreground">
+                    {String(value)}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {lossCurve && lossCurve.length > 1 && (
           <div className="flex flex-col gap-2">
-            <p className="font-medium">Training Loss Curve</p>
-            <p className="text-xs text-gray-600">
+            <SectionHeading icon={TrendingUp}>Training Loss Curve</SectionHeading>
+            <p className="text-xs font-mono text-muted-foreground">
               {architecture} &middot; {epochsRun} epochs
             </p>
-            <LossCurveSparkline values={lossCurve} />
+            <div className="rounded-md border border-border bg-surface-sunken px-3 py-3">
+              <LossCurveSparkline values={lossCurve} />
+            </div>
           </div>
         )}
 
         {featureSignal && featureSignal.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="font-medium">{featureSignalLabel}</p>
+            <SectionHeading icon={BarChart3}>{featureSignalLabel}</SectionHeading>
             <div className="flex flex-col gap-1.5">
               {featureSignal.map((row) => {
                 const widthPct =
                   (Math.abs(row.importance) / maxAbsImportance) * 100;
                 return (
                   <div key={row.feature} className="flex items-center gap-2">
-                    <span className="w-40 shrink-0 truncate text-xs text-gray-600">
+                    <span className="w-40 shrink-0 truncate text-xs text-muted-foreground">
                       {row.feature}
                     </span>
-                    <div className="flex-1 bg-gray-100 rounded h-4 overflow-hidden">
+                    <div className="flex-1 bg-surface-sunken rounded h-4 overflow-hidden">
                       <div
-                        className={
-                          row.importance < 0 ? "bg-gray-400 h-4" : "bg-gray-700 h-4"
-                        }
+                        className={`h-4 rounded transition-[width] duration-300 ${
+                          row.importance < 0 ? "bg-muted-foreground/60" : "bg-primary"
+                        }`}
                         style={{ width: `${widthPct}%` }}
                       />
                     </div>
-                    <span className="w-16 shrink-0 text-xs text-gray-600 text-right">
+                    <span className="w-16 shrink-0 text-xs font-mono text-muted-foreground text-right">
                       {row.importance}
                     </span>
                   </div>
@@ -158,45 +231,55 @@ export default function OutputPanel({
           </div>
         )}
 
+        {problemType === "classification" && trainSummary && sessionId && (
+          <DecisionBoundaryPlot
+            sessionId={sessionId}
+            numericFeatures={numericFeatures}
+            trainSummary={trainSummary}
+          />
+        )}
+
         {confusionMatrix && confusionMatrixLabels && (
           <div className="flex flex-col gap-2">
-            <p className="font-medium">Confusion Matrix</p>
-            <div
-              className="grid w-fit"
-              style={{
-                gridTemplateColumns: `repeat(${confusionMatrixLabels.length + 1}, minmax(2.5rem, 1fr))`,
-              }}
-            >
-              <div className="border border-gray-300 px-2 py-1 bg-gray-50" />
-              {confusionMatrixLabels.map((label) => (
-                <div
-                  key={`col-${label}`}
-                  className="border border-gray-300 px-2 py-1 bg-gray-50 text-xs font-medium text-center"
-                >
-                  {label}
-                </div>
-              ))}
-              {confusionMatrix.map((row, rowIndex) => (
-                <Fragment key={`row-${rowIndex}`}>
-                  <div className="border border-gray-300 px-2 py-1 bg-gray-50 text-xs font-medium text-center">
-                    {confusionMatrixLabels[rowIndex]}
+            <SectionHeading icon={Grid3x3}>Confusion Matrix</SectionHeading>
+            <div className="overflow-x-auto">
+              <div
+                className="grid w-fit rounded-md overflow-hidden border border-border"
+                style={{
+                  gridTemplateColumns: `repeat(${confusionMatrixLabels.length + 1}, minmax(2.5rem, 1fr))`,
+                }}
+              >
+                <div className="px-2 py-1.5 bg-surface-sunken border-b border-r border-border" />
+                {confusionMatrixLabels.map((label) => (
+                  <div
+                    key={`col-${label}`}
+                    className="px-2 py-1.5 bg-surface-sunken border-b border-border text-xs font-mono font-medium text-center text-muted-foreground"
+                  >
+                    {label}
                   </div>
-                  {row.map((cell, colIndex) => (
-                    <div
-                      key={`cell-${rowIndex}-${colIndex}`}
-                      className={
-                        rowIndex === colIndex
-                          ? "border border-gray-300 px-2 py-1 text-center bg-gray-100 font-medium"
-                          : "border border-gray-300 px-2 py-1 text-center"
-                      }
-                    >
-                      {cell}
+                ))}
+                {confusionMatrix.map((row, rowIndex) => (
+                  <Fragment key={`row-${rowIndex}`}>
+                    <div className="px-2 py-1.5 bg-surface-sunken border-r border-border text-xs font-mono font-medium text-center text-muted-foreground">
+                      {confusionMatrixLabels[rowIndex]}
                     </div>
-                  ))}
-                </Fragment>
-              ))}
+                    {row.map((cell, colIndex) => (
+                      <div
+                        key={`cell-${rowIndex}-${colIndex}`}
+                        className={`px-2 py-1.5 text-center text-sm font-mono ${
+                          rowIndex === colIndex
+                            ? "bg-primary-soft text-primary font-semibold"
+                            : "text-foreground/80"
+                        }`}
+                      >
+                        {cell}
+                      </div>
+                    ))}
+                  </Fragment>
+                ))}
+              </div>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Rows = actual class, columns = predicted class.
             </p>
           </div>
@@ -204,81 +287,89 @@ export default function OutputPanel({
 
         {actualVsPredicted && actualVsPredicted.length > 0 && (
           <div className="flex flex-col gap-2">
-            <p className="font-medium">
+            <SectionHeading icon={Table2}>
               Actual vs Predicted (first {actualVsPredicted.length} test points)
-            </p>
-            <table className="border border-gray-300 border-collapse w-fit">
-              <thead>
-                <tr>
-                  <th className="border border-gray-300 px-2 py-1 text-left">
-                    Actual
-                  </th>
-                  <th className="border border-gray-300 px-2 py-1 text-left">
-                    Predicted
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {actualVsPredicted.map((row, index) => (
-                  <tr key={index}>
-                    <td className="border border-gray-300 px-2 py-1">
-                      {row.actual}
-                    </td>
-                    <td className="border border-gray-300 px-2 py-1">
-                      {row.predicted}
-                    </td>
+            </SectionHeading>
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-fit border-collapse text-sm">
+                <thead>
+                  <tr className="bg-surface-sunken">
+                    <th className="px-3 py-1.5 text-left font-semibold text-foreground border-b border-border">
+                      Actual
+                    </th>
+                    <th className="px-3 py-1.5 text-left font-semibold text-foreground border-b border-border">
+                      Predicted
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {actualVsPredicted.map((row, index) => (
+                    <tr key={index} className="odd:bg-surface-raised even:bg-surface-sunken/40">
+                      <td className="px-3 py-1.5 font-mono text-xs border-b border-border">
+                        {row.actual}
+                      </td>
+                      <td className="px-3 py-1.5 font-mono text-xs border-b border-border">
+                        {row.predicted}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
         {compareResult && (
-          <div className="flex flex-col gap-1">
-            <p className="font-medium">
+          <div className="flex flex-col gap-2">
+            <SectionHeading icon={GitCompare}>
               Algorithm Comparison ({compareResult.problem_type})
-            </p>
-            <table className="border border-gray-300 border-collapse">
-              <thead>
-                <tr>
-                  <th className="border border-gray-300 px-2 py-1 text-left">
-                    Algorithm
-                  </th>
-                  {metricKeys.map((key) => (
-                    <th
-                      key={key}
-                      className="border border-gray-300 px-2 py-1 text-left"
-                    >
-                      {METRIC_LABELS[key] ?? key}
+            </SectionHeading>
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-surface-sunken">
+                    <th className="px-3 py-2 text-left font-semibold text-foreground border-b border-border whitespace-nowrap">
+                      Algorithm
                     </th>
-                  ))}
-                  <th className="border border-gray-300 px-2 py-1 text-left">
-                    Training Time (s)
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {compareResult.results.map((row, index) => (
-                  <tr
-                    key={row.algorithm}
-                    className={index === 0 ? "bg-gray-100 font-medium" : ""}
-                  >
-                    <td className="border border-gray-300 px-2 py-1">
-                      {algorithmName(row.algorithm)}
-                    </td>
                     {metricKeys.map((key) => (
-                      <td key={key} className="border border-gray-300 px-2 py-1">
-                        {row.metrics[key]}
-                      </td>
+                      <th
+                        key={key}
+                        className="px-3 py-2 text-left font-semibold text-foreground border-b border-border whitespace-nowrap"
+                      >
+                        {METRIC_LABELS[key] ?? key}
+                      </th>
                     ))}
-                    <td className="border border-gray-300 px-2 py-1">
-                      {row.training_time_seconds}
-                    </td>
+                    <th className="px-3 py-2 text-left font-semibold text-foreground border-b border-border whitespace-nowrap">
+                      Training Time (s)
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {compareResult.results.map((row, index) => (
+                    <tr
+                      key={row.algorithm}
+                      className={
+                        index === 0
+                          ? "bg-primary-soft font-medium"
+                          : "odd:bg-surface-raised even:bg-surface-sunken/40"
+                      }
+                    >
+                      <td className="px-3 py-2 border-b border-border">
+                        {algorithmName(row.algorithm)}
+                      </td>
+                      {metricKeys.map((key) => (
+                        <td key={key} className="px-3 py-2 font-mono text-xs border-b border-border">
+                          {row.metrics[key]}
+                        </td>
+                      ))}
+                      <td className="px-3 py-2 font-mono text-xs border-b border-border">
+                        {row.training_time_seconds}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

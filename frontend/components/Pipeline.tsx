@@ -1,4 +1,6 @@
+import { Check, Loader2, X, Play, SlidersHorizontal, RotateCcw, GitCompare } from "lucide-react";
 import { STAGE_ORDER, STAGE_LABELS, StageName, StageState } from "@/lib/pipeline";
+import { button } from "@/lib/ui";
 
 type PipelineProps = {
   stages: Record<StageName, StageState>;
@@ -37,6 +39,33 @@ function SummaryEntries({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+function StageIcon({ status }: { status: StageState["status"] }) {
+  if (status === "done") {
+    return (
+      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-success text-success-foreground shrink-0">
+        <Check className="w-3.5 h-3.5" strokeWidth={3} />
+      </span>
+    );
+  }
+  if (status === "running") {
+    return (
+      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-primary-soft text-primary shrink-0">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-destructive text-destructive-foreground shrink-0">
+        <X className="w-3.5 h-3.5" strokeWidth={3} />
+      </span>
+    );
+  }
+  return (
+    <span className="flex items-center justify-center w-6 h-6 rounded-full border-2 border-border-strong text-muted-foreground shrink-0" />
+  );
+}
+
 export default function Pipeline({
   stages,
   onRunStage,
@@ -50,28 +79,23 @@ export default function Pipeline({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-gray-700">Pipeline</h3>
+        <h3 className="text-sm font-semibold text-foreground">Pipeline</h3>
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={onRunAll}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-gray-900 rounded"
-          >
+          <button type="button" onClick={onRunAll} className={button.primary}>
+            <Play className="w-3.5 h-3.5" strokeWidth={2.5} />
             Run Entire Pipeline
           </button>
           <button
             type="button"
             disabled={!compareEnabled}
             onClick={onCompareAll}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-gray-700 rounded disabled:bg-gray-300"
+            className={button.secondary}
           >
+            <GitCompare className="w-3.5 h-3.5" strokeWidth={2.5} />
             Compare All Algorithms
           </button>
-          <button
-            type="button"
-            onClick={onReset}
-            className="px-3 py-1.5 text-sm font-medium text-gray-900 bg-gray-200 rounded"
-          >
+          <button type="button" onClick={onReset} className={button.subtle}>
+            <RotateCcw className="w-3.5 h-3.5" strokeWidth={2.5} />
             Reset Pipeline
           </button>
         </div>
@@ -83,22 +107,50 @@ export default function Pipeline({
           const isDisabled =
             index > 0 && stages[previousStageName].status !== "done";
           const state = stages[stageName];
+          const isActive = state.status === "running";
+          const isDone = state.status === "done";
+          const isFailed = state.status === "failed";
 
           return (
             <li
               key={stageName}
-              className="border border-gray-200 rounded px-3 py-2 flex flex-col gap-2"
+              className={`relative rounded-lg px-4 py-3 flex flex-col gap-2 border transition-colors duration-200 ${
+                isActive
+                  ? "border-primary bg-primary-soft/40 shadow-sm"
+                  : isFailed
+                  ? "border-destructive/60 bg-destructive-soft"
+                  : isDone
+                  ? "border-border bg-surface-raised"
+                  : "border-border bg-surface-raised"
+              } ${isDisabled ? "opacity-60" : ""}`}
             >
+              {/* connector line to next stage */}
+              {index < STAGE_ORDER.length - 1 && (
+                <span
+                  aria-hidden
+                  className={`absolute left-[26px] top-full h-2 w-px ${
+                    isDone ? "bg-success" : "bg-border-strong"
+                  }`}
+                />
+              )}
+
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-700">
-                  {index + 1}. {STAGE_LABELS[stageName]}
-                </span>
+                <div className="flex items-center gap-3">
+                  <StageIcon status={state.status} />
+                  <span
+                    className={`text-sm ${
+                      isActive || isDone ? "text-foreground font-medium" : "text-muted-foreground"
+                    }`}
+                  >
+                    {index + 1}. {STAGE_LABELS[stageName]}
+                  </span>
+                </div>
                 <div className="flex gap-2">
                   <button
                     type="button"
                     disabled={isDisabled}
                     onClick={() => onRunStage(stageName)}
-                    className="px-3 py-1 text-sm font-medium text-white bg-gray-700 rounded disabled:bg-gray-300"
+                    className={button.sm}
                   >
                     Run
                   </button>
@@ -107,8 +159,9 @@ export default function Pipeline({
                       type="button"
                       disabled={!tuneEnabled}
                       onClick={onTune}
-                      className="px-3 py-1 text-sm font-medium text-white bg-gray-500 rounded disabled:bg-gray-300"
+                      className={button.accent}
                     >
+                      <SlidersHorizontal className="w-3.5 h-3.5" strokeWidth={2.5} />
                       Tune Hyperparameters
                     </button>
                   )}
@@ -116,7 +169,7 @@ export default function Pipeline({
               </div>
 
               {state.status !== "idle" && (
-                <div className="text-xs text-gray-600 flex flex-col gap-0.5">
+                <div className="pl-9 text-xs text-muted-foreground flex flex-col gap-0.5 font-mono">
                   <p>status: {state.status}</p>
                   {state.summary && <SummaryEntries data={state.summary} />}
                 </div>

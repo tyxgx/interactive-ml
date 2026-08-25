@@ -1,7 +1,9 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { MessageCircleQuestion, Send, Loader2, ChevronUp } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { card, input, button } from "@/lib/ui";
 
 type QaEntry = {
   id: number;
@@ -68,36 +70,41 @@ export default function AskAssistant({ sessionId }: AskAssistantProps) {
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
-        className="self-start px-3 py-1.5 text-sm font-medium text-white bg-gray-700 rounded"
+        className={`self-start ${button.secondary}`}
       >
+        {expanded ? (
+          <ChevronUp className="w-4 h-4" strokeWidth={2.5} />
+        ) : (
+          <MessageCircleQuestion className="w-4 h-4" strokeWidth={2} />
+        )}
         {expanded ? "Hide Assistant" : "Ask about this pipeline"}
       </button>
 
       {expanded && (
-        <div className="border border-gray-200 rounded p-3 flex flex-col gap-3">
-          <div className="flex flex-col gap-3 max-h-72 overflow-y-auto">
+        <div className={`${card} p-4 flex flex-col gap-3 transition-all duration-200`}>
+          <div className="flex flex-col gap-4 max-h-72 overflow-y-auto">
             {qaList.length === 0 && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Ask a question about ML concepts or this pipeline, e.g. &quot;what
                 is overfitting?&quot;
               </p>
             )}
             {qaList.map((qa) => (
               <div key={qa.id} className="flex flex-col gap-1">
-                <p className="text-sm font-medium text-gray-800">
+                <p className="text-sm font-medium text-foreground">
                   Q: {qa.question}
                 </p>
                 {qa.error ? (
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-muted-foreground">
                     {qa.error === "RAG assistant not configured"
                       ? NOT_CONFIGURED_MESSAGE
                       : qa.error}
                   </p>
                 ) : (
                   <>
-                    <p className="text-sm text-gray-700">{qa.answer}</p>
+                    <p className="text-sm text-foreground/90">{qa.answer}</p>
                     {qa.sources && qa.sources.length > 0 && (
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs font-mono text-muted-foreground">
                         Sources: {qa.sources.join(", ")}
                       </p>
                     )}
@@ -113,13 +120,18 @@ export default function AskAssistant({ sessionId }: AskAssistantProps) {
               value={question}
               onChange={(event) => setQuestion(event.target.value)}
               placeholder="Ask a question..."
-              className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm"
+              className={`flex-1 ${input}`}
             />
             <button
               type="submit"
               disabled={loading || !question.trim()}
-              className="px-3 py-1 text-sm font-medium text-white bg-gray-900 rounded disabled:bg-gray-300"
+              className={button.sm}
             >
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2.5} />
+              ) : (
+                <Send className="w-4 h-4" strokeWidth={2.5} />
+              )}
               {loading ? "Asking..." : "Ask"}
             </button>
           </form>

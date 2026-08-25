@@ -22,6 +22,7 @@ from groq import Groq
 
 import rag
 from datasets import BUILTIN_DATASETS, get_dataset
+from decision_boundary import build_grid, predict_grid
 from models import MODEL_REGISTRY, get_model, get_param_grid
 from preprocessing import build_preprocessor
 from schema import build_dataset_info
@@ -64,6 +65,7 @@ STAGE_REQUIREMENTS = {
     "evaluate": ["predictions"],
     "compare": ["preprocessed_data"],
     "tune": ["preprocessed_data"],
+    "decision_boundary": ["model"],
 }
 
 
@@ -74,6 +76,12 @@ class StartRequest(BaseModel):
 
 class TrainRequest(BaseModel):
     algorithm: str
+
+
+class DecisionBoundaryRequest(BaseModel):
+    feature_x: str
+    feature_y: str
+    resolution: int = 60
 
 
 def stage_response(session_id: str, stage: str, status: str, summary: dict):
@@ -532,6 +540,88 @@ def tune(session_id: str, body: TrainRequest):
             "best_params": search.best_params_,
             "best_cv_score": round(search.best_score_, 4),
             "cv_folds": 5,
+        }
+        return stage_response(session_id, stage, "done", summary)
+    except Exception as e:
+        return stage_response(
+            session_id, stage, "failed", {"error": str(e), "required_stage": None}
+        )
+
+
+@app.post("/pipeline/{session_id}/decision-boundary")
+def decision_boundary(session_id: str, body: DecisionBoundaryRequest):
+    stage = "decision_boundary"
+    session, error_response = load_session_or_fail(session_id, stage)
+    if error_response:
+        return error_response
+
+    try:
+        problem_type = session["schema"]["problem_type"]
+        if problem_type != "classification":
+            return stage_response(
+                session_id,
+                stage,
+                "failed",
+                {
+                    "error": "Decision boundary is only available for classification problems",
+                    "required_stage": None,
+                },
+            )
+
+        X_train = session["split"]["X_train"]
+        numeric_columns = X_train.select_dtypes(include="number").columns.tolist()
+
+        if body.feature_x not in numeric_columns or body.feature_y not in numeric_columns:
+            return stage_response(
+                session_id,
+                stage,
+                "failed",
+                {
+                    "error": "feature_x and feature_y must be numeric columns from the dataset",
+                    "required_stage": None,
+                },
+            )
+
+        if body.feature_x == body.feature_y:
+            return stage_response(
+                session_id,
+                stage,
+                "failed",
+                {
+                    "error": "feature_x and feature_y must be different columns",
+                    "required_stage": None,
+                },
+            )
+
+        resolution = max(10, min(body.resolution, 150))
+        grid_df, x_range, y_range = build_grid(
+            X_train, body.feature_x, body.feature_y, resolution
+        )
+        grid_predictions = predict_grid(
+            session["model"], session["preprocessor"], grid_df, resolution
+        )
+
+        X_test = session["split"]["X_test"]
+        y_test = session["split"]["y_test"]
+        predictions = session.get("predictions")
+        if predictions is None:
+            X_test_t = session["preprocessed_data"]["X_test_t"]
+            predictions = session["model"].predict(X_test_t)
+
+        summary = {
+            "feature_x": body.feature_x,
+            "feature_y": body.feature_y,
+            "x_range": list(x_range),
+            "y_range": list(y_range),
+            "resolution": resolution,
+            "grid_predictions": grid_predictions.tolist(),
+            "classes": session["model"].classes_.tolist(),
+            "points": {
+                "x": X_test[body.feature_x].tolist(),
+                "y": X_test[body.feature_y].tolist(),
+                "actual": y_test.tolist(),
+                "predicted": np.asarray(predictions).tolist(),
+            },
         }
         return stage_response(session_id, stage, "done", summary)
     except Exception as e:

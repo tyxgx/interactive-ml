@@ -1,3 +1,5 @@
+import { label as labelClass, input } from "@/lib/ui";
+
 type TargetColumnSelectorProps = {
   columns: string[];
   value: string;
@@ -10,18 +12,15 @@ export default function TargetColumnSelector({
   onChange,
 }: TargetColumnSelectorProps) {
   return (
-    <div className="flex flex-col gap-1">
-      <label
-        htmlFor="target-column"
-        className="text-sm font-medium text-gray-700"
-      >
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor="target-column" className={labelClass}>
         Target Column
       </label>
       <select
         id="target-column"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-64 border border-gray-300 rounded px-3 py-2 text-sm"
+        className={`w-64 cursor-pointer ${input}`}
       >
         {value === "" && (
           <option value="" disabled>

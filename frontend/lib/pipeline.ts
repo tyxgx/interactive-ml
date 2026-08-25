@@ -49,6 +49,22 @@ export type CompareResult = {
   results: CompareResultRow[];
 };
 
+export type DecisionBoundaryResult = {
+  feature_x: string;
+  feature_y: string;
+  x_range: [number, number];
+  y_range: [number, number];
+  resolution: number;
+  grid_predictions: (number | string)[][];
+  classes: (number | string)[];
+  points: {
+    x: number[];
+    y: number[];
+    actual: (number | string)[];
+    predicted: (number | string)[];
+  };
+};
+
 export function createInitialStages(): Record<StageName, StageState> {
   return STAGE_ORDER.reduce((acc, stageName) => {
     acc[stageName] = { status: "idle", summary: null };

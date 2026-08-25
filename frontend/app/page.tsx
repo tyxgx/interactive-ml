@@ -51,12 +51,16 @@ export default function Home() {
 
   useEffect(() => {
     const loadDatasets = async () => {
-      const response = await fetch(`${API_BASE}/datasets`);
-      const data: DatasetListItem[] = await response.json();
-      setDatasets(data);
-      if (data.length > 0) {
-        setSelectedDataset(data[0].name);
-        setSelectedTargetColumn(data[0].default_target);
+      try {
+        const response = await fetch(`${API_BASE}/datasets`);
+        const data: DatasetListItem[] = await response.json();
+        setDatasets(data);
+        if (data.length > 0) {
+          setSelectedDataset(data[0].name);
+          setSelectedTargetColumn(data[0].default_target);
+        }
+      } catch {
+        setDatasets([]);
       }
     };
     loadDatasets();
@@ -84,6 +88,13 @@ export default function Home() {
     : null;
   const trainedProblemType = trainSummary?.problem_type ?? null;
   const isAlgorithmLocked = pipelineState.stages.train.status === "done";
+
+  const startSummary = pipelineState.stages.start.summary as
+    | { numeric_columns?: string[] }
+    | null;
+  const numericFeatures = (startSummary?.numeric_columns ?? []).filter(
+    (column) => column !== selectedTargetColumn
+  );
 
   const resetPipeline = () => {
     setPipelineState({ sessionId: null, stages: createInitialStages() });
@@ -293,17 +304,17 @@ export default function Home() {
         onSelect={handleAlgorithmSelect}
         disabled={isAlgorithmLocked}
       />
-      <main className="w-4/5 p-6 flex flex-col gap-6">
+      <main className="w-4/5 p-8 flex flex-col gap-8 overflow-y-auto">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
             {selectedAlgorithm.name}
           </h1>
-          <p className="text-sm text-gray-600 mt-1">
+          <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl">
             {selectedAlgorithm.description}
           </p>
         </div>
 
-        <div className="flex items-end gap-4">
+        <div className="flex items-end gap-4 flex-wrap">
           <DatasetSelector
             datasets={datasets}
             value={selectedDataset}
@@ -338,6 +349,8 @@ export default function Home() {
           metrics={evaluationResult}
           compareResult={compareResult}
           trainSummary={pipelineState.stages.train.summary}
+          sessionId={pipelineState.sessionId}
+          numericFeatures={numericFeatures}
         />
 
         <AskAssistant sessionId={pipelineState.sessionId} />

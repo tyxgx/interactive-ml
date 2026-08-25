@@ -1,4 +1,5 @@
 import { DatasetListItem } from "@/lib/dataset";
+import { label as labelClass, input } from "@/lib/ui";
 
 type DatasetSelectorProps = {
   datasets: DatasetListItem[];
@@ -12,15 +13,15 @@ export default function DatasetSelector({
   onChange,
 }: DatasetSelectorProps) {
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor="dataset" className="text-sm font-medium text-gray-700">
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor="dataset" className={labelClass}>
         Dataset
       </label>
       <select
         id="dataset"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-64 border border-gray-300 rounded px-3 py-2 text-sm"
+        className={`w-64 cursor-pointer ${input}`}
       >
         {datasets.map((dataset) => (
           <option key={dataset.name} value={dataset.name}>
