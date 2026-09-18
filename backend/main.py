@@ -32,8 +32,20 @@ from uploads import create_upload
 app = FastAPI()
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
-ASK_MODEL = "llama-3.1-8b-instant"
+# Groq retires models periodically; ASK_MODEL overrides, the rest are fallbacks on model_not_found.
+ASK_MODELS = [
+    m
+    for m in [
+        os.environ.get("ASK_MODEL"),
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "openai/gpt-oss-20b",
+    ]
+    if m
+]
 MAX_QUESTIONS_PER_SESSION = 20
+# Compare/Tune fit many models (tune: 5-fold grid search); cap rows so big datasets finish on free-tier CPU.
+MAX_COMPARE_TRAIN_ROWS = 4000
 ASK_RATE_LIMIT_FALLBACK: dict[str, int] = {}
 
 
@@ -174,6 +186,15 @@ def pipeline_start(body: StartRequest):
         return stage_response(
             session_id, "start", "failed", {"error": str(e), "required_stage": None}
         )
+
+
+def subsample_train(X_train_t, y_train):
+    """Return (X, y, was_subsampled) with at most MAX_COMPARE_TRAIN_ROWS rows."""
+    n = X_train_t.shape[0]
+    if n <= MAX_COMPARE_TRAIN_ROWS:
+        return X_train_t, y_train, False
+    idx = np.random.RandomState(42).choice(n, MAX_COMPARE_TRAIN_ROWS, replace=False)
+    return X_train_t[idx], np.asarray(y_train)[idx], True
 
 
 def load_session_or_fail(session_id: str, stage: str):
@@ -482,13 +503,14 @@ def compare(session_id: str):
         X_test_t = session["preprocessed_data"]["X_test_t"]
         y_train = session["split"]["y_train"]
         y_test = session["split"]["y_test"]
+        X_fit, y_fit, subsampled = subsample_train(X_train_t, y_train)
 
         results = []
         for algorithm in MODEL_REGISTRY[problem_type]:
             model = get_model(problem_type, algorithm)
 
             start_time = time.perf_counter()
-            model.fit(X_train_t, y_train)
+            model.fit(X_fit, y_fit)
             elapsed = time.perf_counter() - start_time
 
             predictions = model.predict(X_test_t)
@@ -506,6 +528,11 @@ def compare(session_id: str):
         results.sort(key=lambda r: r["metrics"][rank_key], reverse=True)
 
         summary = {"problem_type": problem_type, "results": results}
+        if subsampled:
+            summary["note"] = (
+                f"Trained on a {MAX_COMPARE_TRAIN_ROWS}-row sample of the training set "
+                "to keep comparison fast."
+            )
         return stage_response(session_id, stage, "done", summary)
     except Exception as e:
         return stage_response(
@@ -528,8 +555,9 @@ def tune(session_id: str, body: TrainRequest):
         X_train_t = session["preprocessed_data"]["X_train_t"]
         y_train = session["split"]["y_train"]
 
+        X_fit, y_fit, subsampled = subsample_train(X_train_t, y_train)
         search = GridSearchCV(model, param_grid, cv=5)
-        search.fit(X_train_t, y_train)
+        search.fit(X_fit, y_fit)
 
         session["model"] = search.best_estimator_
         session["algorithm"] = body.algorithm
@@ -541,6 +569,10 @@ def tune(session_id: str, body: TrainRequest):
             "best_cv_score": round(search.best_score_, 4),
             "cv_folds": 5,
         }
+        if subsampled:
+            summary["note"] = (
+                f"Grid search ran on a {MAX_COMPARE_TRAIN_ROWS}-row sample of the training set."
+            )
         return stage_response(session_id, stage, "done", summary)
     except Exception as e:
         return stage_response(
@@ -700,14 +732,23 @@ def ask(body: AskRequest, request: Request):
         )
 
         client = Groq(api_key=GROQ_API_KEY)
-        response = client.chat.completions.create(
-            model=ASK_MODEL,
-            max_tokens=400,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": body.question},
-            ],
-        )
+        response = None
+        for model_name in ASK_MODELS:
+            try:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    max_tokens=400,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": body.question},
+                    ],
+                )
+                break
+            except Exception as model_error:
+                if "model_not_found" not in str(model_error):
+                    raise
+        if response is None:
+            return {"error": "No available Groq model; set ASK_MODEL to a current model id."}
         answer = response.choices[0].message.content
 
         return {"answer": answer, "sources": [doc["title"] for doc in docs]}
