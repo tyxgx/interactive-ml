@@ -23,6 +23,7 @@ from groq import Groq
 import rag
 from datasets import BUILTIN_DATASETS, get_dataset
 from decision_boundary import build_grid, predict_grid
+import diagnostics
 from models import MODEL_REGISTRY, get_model, get_param_grid
 from preprocessing import build_preprocessor
 from schema import build_dataset_info
@@ -46,6 +47,8 @@ ASK_MODELS = [
 MAX_QUESTIONS_PER_SESSION = 20
 # Compare/Tune fit many models (tune: 5-fold grid search); cap rows so big datasets finish on free-tier CPU.
 MAX_COMPARE_TRAIN_ROWS = 4000
+# Diagnostics refit models many times (cross-validation) or predict many times (permutation), so cap harder.
+MAX_DIAGNOSTIC_ROWS = 1200
 ASK_RATE_LIMIT_FALLBACK: dict[str, int] = {}
 
 
@@ -78,6 +81,10 @@ STAGE_REQUIREMENTS = {
     "compare": ["preprocessed_data"],
     "tune": ["preprocessed_data"],
     "decision_boundary": ["model"],
+    "learning_curve": ["model"],
+    "roc": ["model"],
+    "residuals": ["model"],
+    "importance": ["model"],
 }
 
 
@@ -188,12 +195,13 @@ def pipeline_start(body: StartRequest):
         )
 
 
-def subsample_train(X_train_t, y_train):
-    """Return (X, y, was_subsampled) with at most MAX_COMPARE_TRAIN_ROWS rows."""
+def subsample_train(X_train_t, y_train, limit=None):
+    """Return (X, y, was_subsampled) with at most `limit` rows (default MAX_COMPARE_TRAIN_ROWS)."""
+    limit = limit or MAX_COMPARE_TRAIN_ROWS
     n = X_train_t.shape[0]
-    if n <= MAX_COMPARE_TRAIN_ROWS:
+    if n <= limit:
         return X_train_t, y_train, False
-    idx = np.random.RandomState(42).choice(n, MAX_COMPARE_TRAIN_ROWS, replace=False)
+    idx = np.random.RandomState(42).choice(n, limit, replace=False)
     return X_train_t[idx], np.asarray(y_train)[idx], True
 
 
@@ -754,3 +762,89 @@ def ask(body: AskRequest, request: Request):
         return {"answer": answer, "sources": [doc["title"] for doc in docs]}
     except Exception as e:
         return {"error": str(e)}
+
+
+def _diagnostic(session_id: str, stage: str, compute, classification_only=None):
+    """Shared wrapper: session/prereq check, problem-type guard, error handling."""
+    session, error_response = load_session_or_fail(session_id, stage)
+    if error_response:
+        return error_response
+
+    try:
+        problem_type = session["schema"]["problem_type"]
+        if classification_only is not None and (problem_type == "classification") != classification_only:
+            needed = "classification" if classification_only else "regression"
+            return stage_response(
+                session_id,
+                stage,
+                "failed",
+                {"error": f"{stage} is only available for {needed} problems", "required_stage": None},
+            )
+        return stage_response(session_id, stage, "done", compute(session, problem_type))
+    except Exception as e:
+        return stage_response(
+            session_id, stage, "failed", {"error": str(e), "required_stage": None}
+        )
+
+
+@app.post("/pipeline/{session_id}/learning-curve")
+def learning_curve_endpoint(session_id: str):
+    def compute(session, problem_type):
+        X_fit, y_fit, subsampled = subsample_train(
+            session["preprocessed_data"]["X_train_t"],
+            session["split"]["y_train"],
+            MAX_DIAGNOSTIC_ROWS,
+        )
+        model = get_model(problem_type, session["algorithm"])
+        data = diagnostics.learning_curve_data(model, X_fit, y_fit, problem_type)
+        data["algorithm"] = session["algorithm"]
+        if subsampled:
+            data["note"] = f"Computed on a {MAX_DIAGNOSTIC_ROWS}-row sample of the training set."
+        return data
+
+    return _diagnostic(session_id, "learning_curve", compute)
+
+
+@app.post("/pipeline/{session_id}/roc")
+def roc_endpoint(session_id: str):
+    def compute(session, problem_type):
+        data = diagnostics.roc_pr_data(
+            session["model"],
+            session["preprocessed_data"]["X_test_t"],
+            session["split"]["y_test"],
+        )
+        data["algorithm"] = session["algorithm"]
+        return data
+
+    return _diagnostic(session_id, "roc", compute, classification_only=True)
+
+
+@app.post("/pipeline/{session_id}/residuals")
+def residuals_endpoint(session_id: str):
+    def compute(session, problem_type):
+        predictions = session["model"].predict(session["preprocessed_data"]["X_test_t"])
+        data = diagnostics.residuals_data(session["split"]["y_test"], predictions)
+        data["algorithm"] = session["algorithm"]
+        return data
+
+    return _diagnostic(session_id, "residuals", compute, classification_only=False)
+
+
+@app.post("/pipeline/{session_id}/importance")
+def importance_endpoint(session_id: str):
+    def compute(session, problem_type):
+        names = session["preprocessor"].get_feature_names_out()
+        X_eval, y_eval, subsampled = subsample_train(
+            session["preprocessed_data"]["X_test_t"],
+            session["split"]["y_test"],
+            MAX_DIAGNOSTIC_ROWS // 2,
+        )
+        data = diagnostics.permutation_importance_data(
+            session["model"], X_eval, y_eval, names, problem_type
+        )
+        data["algorithm"] = session["algorithm"]
+        if subsampled:
+            data["note"] = f"Computed on a {MAX_DIAGNOSTIC_ROWS // 2}-row sample of the test set."
+        return data
+
+    return _diagnostic(session_id, "importance", compute)

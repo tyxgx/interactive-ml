@@ -11,6 +11,7 @@ import Pipeline from "@/components/Pipeline";
 import DatasetPreview from "@/components/DatasetPreview";
 import OutputPanel from "@/components/OutputPanel";
 import AskAssistant from "@/components/AskAssistant";
+import DiagnosticsPanel from "@/components/DiagnosticsPanel";
 import { algorithms } from "@/lib/algorithms";
 import { API_BASE } from "@/lib/api";
 import { DatasetResult, DatasetListItem, UploadResult } from "@/lib/dataset";
@@ -352,6 +353,20 @@ export default function ExplorePage() {
           sessionId={pipelineState.sessionId}
           numericFeatures={numericFeatures}
         />
+
+        {pipelineState.sessionId &&
+          pipelineState.stages.train.status === "done" &&
+          trainSummary?.algorithm && (
+            <DiagnosticsPanel
+              key={`${pipelineState.sessionId}-${trainSummary.algorithm}-${String(
+                (pipelineState.stages.train.summary as Record<string, unknown> | null)
+                  ?.training_time_seconds
+              )}`}
+              sessionId={pipelineState.sessionId}
+              problemType={trainedProblemType}
+              algorithm={trainSummary.algorithm}
+            />
+          )}
 
         <AskAssistant sessionId={pipelineState.sessionId} />
       </main>
