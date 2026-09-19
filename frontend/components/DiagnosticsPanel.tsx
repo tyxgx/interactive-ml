@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Activity, Loader2 } from "lucide-react";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { StageResponse } from "@/lib/pipeline";
 import { button } from "@/lib/ui";
 import { LineChart, ScatterChart } from "@/components/charts/Charts";
@@ -221,7 +221,7 @@ export default function DiagnosticsPanel({ sessionId, problemType, algorithm }: 
         if (cancelled) return;
         setStatus((prev) => ({ ...prev, [key]: "loading" }));
         try {
-          const response = await fetch(`${API_BASE}/pipeline/${sessionId}/${key}`, {
+          const response = await apiFetch(`/pipeline/${sessionId}/${key}`, {
             method: "POST",
           });
           const data = (await response.json()) as StageResponse;

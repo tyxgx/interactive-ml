@@ -14,7 +14,8 @@ import OutputPanel from "@/components/OutputPanel";
 import AskAssistant from "@/components/AskAssistant";
 import DiagnosticsPanel from "@/components/DiagnosticsPanel";
 import { algorithms } from "@/lib/algorithms";
-import { API_BASE } from "@/lib/api";
+import { apiFetch, startEngine } from "@/lib/api";
+import { ENGINE_STAGE_LABEL, useEngineError, useEngineStage } from "@/lib/useEngine";
 import { DatasetResult, DatasetListItem, UploadResult } from "@/lib/dataset";
 import {
   StageName,
@@ -53,48 +54,39 @@ export default function ExplorePage() {
     stages: createInitialStages(),
   });
 
-  const [serverWaking, setServerWaking] = useState(false);
+  const engineStage = useEngineStage();
+  const engineError = useEngineError();
   const [compareProgress, setCompareProgress] = useState<CompareProgress | null>(
     null
   );
 
   useEffect(() => {
+    startEngine();
     let cancelled = false;
-    let loaded = false;
-    // The free-tier backend sleeps when idle: retry quietly and explain the wait.
-    const wakingTimer = setTimeout(() => {
-      if (!cancelled && !loaded) setServerWaking(true);
-    }, 2000);
 
+    // Requests queue inside the engine until it has booted, so this simply waits.
     const loadDatasets = async () => {
-      for (let attempt = 0; attempt < 8 && !cancelled; attempt++) {
+      for (let attempt = 0; attempt < 4 && !cancelled; attempt++) {
         try {
-          const response = await fetch(`${API_BASE}/datasets`);
+          const response = await apiFetch(`/datasets`);
           if (!response.ok) throw new Error(String(response.status));
           const data: DatasetListItem[] = await response.json();
           if (cancelled) return;
-          loaded = true;
-          clearTimeout(wakingTimer);
           setDatasets(data);
           if (data.length > 0) {
             setSelectedDataset(data[0].name);
             setSelectedTargetColumn(data[0].default_target);
           }
-          setServerWaking(false);
           return;
         } catch {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
-      loaded = true;
-      clearTimeout(wakingTimer);
-      if (!cancelled) setServerWaking(false);
     };
     loadDatasets();
 
     return () => {
       cancelled = true;
-      clearTimeout(wakingTimer);
     };
   }, []);
 
@@ -154,8 +146,8 @@ export default function ExplorePage() {
   };
 
   const handleLoadDataset = async () => {
-    const response = await fetch(
-      `${API_BASE}/dataset/${encodeURIComponent(
+    const response = await apiFetch(
+      `/dataset/${encodeURIComponent(
         selectedDataset
       )}?target_column=${encodeURIComponent(selectedTargetColumn)}`
     );
@@ -169,7 +161,7 @@ export default function ExplorePage() {
     const formData = new FormData();
     formData.append("file", file);
 
-    const response = await fetch(`${API_BASE}/upload`, {
+    const response = await apiFetch(`/upload`, {
       method: "POST",
       body: formData,
     });
@@ -204,8 +196,8 @@ export default function ExplorePage() {
 
     const url =
       stageName === "start"
-        ? `${API_BASE}/pipeline/start`
-        : `${API_BASE}/pipeline/${activeSessionId}/${stageName}`;
+        ? `/pipeline/start`
+        : `/pipeline/${activeSessionId}/${stageName}`;
 
     const options: RequestInit =
       stageName === "start"
@@ -225,7 +217,7 @@ export default function ExplorePage() {
           }
         : { method: "POST" };
 
-    const response = await fetch(url, options);
+    const response = await apiFetch(url, options);
     const data: StageResponse = await response.json();
 
     setPipelineState((prev) => ({
@@ -242,8 +234,8 @@ export default function ExplorePage() {
         | undefined;
       const problemType = schema?.problem_type;
       if (problemType) {
-        const algoResponse = await fetch(
-          `${API_BASE}/algorithms/${problemType}`
+        const algoResponse = await apiFetch(
+          `/algorithms/${problemType}`
         );
         const algoIds: string[] = await algoResponse.json();
         setValidAlgorithmIds(algoIds);
@@ -277,8 +269,8 @@ export default function ExplorePage() {
           | { problem_type?: string }
           | undefined;
         if (schema?.problem_type) {
-          const algoResponse = await fetch(
-            `${API_BASE}/algorithms/${schema.problem_type}`
+          const algoResponse = await apiFetch(
+            `/algorithms/${schema.problem_type}`
           );
           const algoIds: string[] = await algoResponse.json();
           if (!algoIds.includes(currentAlgorithm)) {
@@ -301,8 +293,8 @@ export default function ExplorePage() {
     let rankKey = "accuracy";
 
     try {
-      const response = await fetch(
-        `${API_BASE}/pipeline/${pipelineState.sessionId}/compare/stream`,
+      const response = await apiFetch(
+        `/pipeline/${pipelineState.sessionId}/compare/stream`,
         { method: "POST" }
       );
       if (!response.ok || !response.body) throw new Error("stream unavailable");
@@ -369,8 +361,8 @@ export default function ExplorePage() {
   const handleTune = async () => {
     if (!pipelineState.sessionId) return;
 
-    const response = await fetch(
-      `${API_BASE}/pipeline/${pipelineState.sessionId}/tune`,
+    const response = await apiFetch(
+      `/pipeline/${pipelineState.sessionId}/tune`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -407,14 +399,20 @@ export default function ExplorePage() {
           </p>
         </div>
 
-        {serverWaking && (
+        {engineStage !== "ready" && (
           <p
             role="status"
-            className="flex items-center gap-2 rounded-md border border-border bg-primary-soft px-3 py-2 text-sm text-foreground"
+            className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-foreground ${
+              engineStage === "error"
+                ? "border-destructive/40 bg-destructive-soft"
+                : "border-border bg-primary-soft"
+            }`}
           >
-            <Loader2 className="w-4 h-4 animate-spin text-primary" />
-            Waking up the server. Free hosting sleeps when idle, so the first load takes a few
-            seconds. It only happens once.
+            {engineStage !== "error" && (
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            )}
+            {ENGINE_STAGE_LABEL[engineStage]}
+            {engineStage === "error" && engineError ? ` (${engineError.slice(0, 120)})` : ""}
           </p>
         )}
 

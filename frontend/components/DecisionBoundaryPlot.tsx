@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Scan } from "lucide-react";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { DecisionBoundaryResult, StageResponse } from "@/lib/pipeline";
 import { label as labelClass, input } from "@/lib/ui";
 
@@ -134,7 +134,7 @@ export default function DecisionBoundaryPlot({
     if (!canFetch) return;
     let cancelled = false;
 
-    fetch(`${API_BASE}/pipeline/${sessionId}/decision-boundary`, {
+    apiFetch(`/pipeline/${sessionId}/decision-boundary`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ feature_x: featureX, feature_y: featureY }),

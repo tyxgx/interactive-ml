@@ -35,4 +35,9 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      # The shipped public/py must match backend/ (regenerate with `npm run sync:backend`)
+      - run: node scripts/sync-backend.mjs
+      - run: git diff --exit-code -- public/py
+      # Runs the shipped backend in real Pyodide, the runtime the browser uses
+      - run: node scripts/pyodide-smoke.mjs
       - run: npm run build

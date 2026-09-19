@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { MessageCircleQuestion, Send, Loader2, ChevronUp } from "lucide-react";
-import { API_BASE } from "@/lib/api";
+import { apiFetch, remoteFetch } from "@/lib/api";
 import { card, input, button } from "@/lib/ui";
 
 type QaEntry = {
@@ -34,10 +34,25 @@ export default function AskAssistant({ sessionId }: AskAssistantProps) {
     setQuestion("");
 
     try {
-      const response = await fetch(`${API_BASE}/ask`, {
+      // Session state lives in the in-browser engine; the assistant runs on the server
+      // (it needs a secret API key), so pass along a short summary of the session.
+      let sessionContext: string | null = null;
+      if (sessionId) {
+        try {
+          const ctx = await apiFetch(`/pipeline/${sessionId}/context`);
+          sessionContext = ((await ctx.json()) as { context: string | null }).context;
+        } catch {
+          sessionContext = null;
+        }
+      }
+      const response = await remoteFetch(`/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: trimmed, session_id: sessionId }),
+        body: JSON.stringify({
+          question: trimmed,
+          session_id: null,
+          session_context: sessionContext,
+        }),
       });
       const data = await response.json();
 

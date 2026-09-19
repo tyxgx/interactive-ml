@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect } from "react";
-import { API_BASE } from "@/lib/api";
+import { remoteFetch, startEngine } from "@/lib/api";
 
-// The free-tier backend sleeps when idle. Pinging it as soon as the landing page loads
-// means it is usually awake by the time someone clicks "Open the app".
+// Everything the app needs is started while the visitor reads the landing page:
+// the in-browser Python engine (persists when they open the app) and the small
+// server that powers the AI assistant, which sleeps when idle.
 export default function WarmUp() {
   useEffect(() => {
-    fetch(`${API_BASE}/health`, { cache: "no-store" }).catch(() => {});
+    startEngine();
+    remoteFetch("/health", { cache: "no-store" }).catch(() => {});
   }, []);
   return null;
 }

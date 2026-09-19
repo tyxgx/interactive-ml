@@ -1,0 +1,37 @@
+{
+  "files": [
+    "datasets.py",
+    "decision_boundary.py",
+    "diagnostics.py",
+    "main.py",
+    "models.py",
+    "pipeline_state.py",
+    "preprocessing.py",
+    "pyodide_runner.py",
+    "rag.py",
+    "runtime.py",
+    "schema.py",
+    "uploads.py",
+    "knowledge_base/accuracy_vs_f1.md",
+    "knowledge_base/bias_variance_tradeoff.md",
+    "knowledge_base/confusion_matrix.md",
+    "knowledge_base/cross_validation.md",
+    "knowledge_base/data_leakage.md",
+    "knowledge_base/feature_scaling.md",
+    "knowledge_base/hyperparameters.md",
+    "knowledge_base/one_hot_encoding.md",
+    "knowledge_base/overfitting.md",
+    "knowledge_base/precision_vs_recall.md",
+    "knowledge_base/regression_metrics.md",
+    "knowledge_base/stage_evaluate.md",
+    "knowledge_base/stage_predict.md",
+    "knowledge_base/stage_preprocess.md",
+    "knowledge_base/stage_split.md",
+    "knowledge_base/stage_train.md",
+    "knowledge_base/train_test_split.md",
+    "data/california_housing.csv.gz"
+  ],
+  "wheels": [
+    "python_multipart-0.0.32-py3-none-any.whl"
+  ]
+}
