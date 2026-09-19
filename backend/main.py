@@ -48,7 +48,7 @@ MAX_QUESTIONS_PER_SESSION = 20
 # Compare/Tune fit many models (tune: 5-fold grid search); cap rows so big datasets finish on free-tier CPU.
 MAX_COMPARE_TRAIN_ROWS = 4000
 # Diagnostics refit models many times (cross-validation) or predict many times (permutation), so cap harder.
-MAX_DIAGNOSTIC_ROWS = 1200
+MAX_DIAGNOSTIC_ROWS = 600
 ASK_RATE_LIMIT_FALLBACK: dict[str, int] = {}
 
 
