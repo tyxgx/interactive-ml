@@ -1,1 +1,6 @@
 .DS_Store
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+selenium-report.xml
