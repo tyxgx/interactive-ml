@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { BrainCircuit } from "lucide-react";
 import { Algorithm } from "@/lib/algorithms";
 
@@ -16,12 +17,16 @@ export default function Sidebar({
 }: SidebarProps) {
   return (
     <aside className="w-1/5 min-w-[220px] border-r border-border bg-surface-raised h-full overflow-y-auto flex flex-col">
-      <div className="flex items-center gap-2 px-4 py-4 border-b border-border">
+      <Link
+        href="/"
+        title="Back to home"
+        className="flex items-center gap-2 px-4 py-4 border-b border-border hover:bg-surface-sunken transition-colors duration-150"
+      >
         <BrainCircuit className="w-5 h-5 text-primary" strokeWidth={2} />
         <span className="font-mono text-sm font-semibold tracking-tight text-foreground">
           Interactive ML
         </span>
-      </div>
+      </Link>
 
       <h2 className="px-4 pt-4 pb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
         Algorithms
