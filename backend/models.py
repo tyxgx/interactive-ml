@@ -10,7 +10,7 @@ MODEL_REGISTRY = {
     "classification": {
         "logistic_regression": LogisticRegression(max_iter=1000),
         "decision_tree": DecisionTreeClassifier(random_state=42),
-        "random_forest": RandomForestClassifier(random_state=42),
+        "random_forest": RandomForestClassifier(random_state=42, n_jobs=-1),
         "knn": KNeighborsClassifier(),
         "svm": SVC(random_state=42),
         "neural_network": MLPClassifier(
@@ -20,7 +20,7 @@ MODEL_REGISTRY = {
     "regression": {
         "linear_regression": LinearRegression(),
         "decision_tree": DecisionTreeRegressor(random_state=42),
-        "random_forest": RandomForestRegressor(random_state=42),
+        "random_forest": RandomForestRegressor(random_state=42, n_jobs=-1),
         "knn": KNeighborsRegressor(),
         "svm": SVR(),
         "neural_network": MLPRegressor(

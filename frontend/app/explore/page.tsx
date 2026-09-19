@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 import DatasetSelector from "@/components/DatasetSelector";
 import TargetColumnSelector from "@/components/TargetColumnSelector";
@@ -22,6 +23,8 @@ import {
   STAGE_ORDER,
   createInitialStages,
   CompareResult,
+  CompareProgress,
+  CompareStreamEvent,
 } from "@/lib/pipeline";
 
 export default function ExplorePage() {
@@ -50,21 +53,49 @@ export default function ExplorePage() {
     stages: createInitialStages(),
   });
 
+  const [serverWaking, setServerWaking] = useState(false);
+  const [compareProgress, setCompareProgress] = useState<CompareProgress | null>(
+    null
+  );
+
   useEffect(() => {
+    let cancelled = false;
+    let loaded = false;
+    // The free-tier backend sleeps when idle: retry quietly and explain the wait.
+    const wakingTimer = setTimeout(() => {
+      if (!cancelled && !loaded) setServerWaking(true);
+    }, 2000);
+
     const loadDatasets = async () => {
-      try {
-        const response = await fetch(`${API_BASE}/datasets`);
-        const data: DatasetListItem[] = await response.json();
-        setDatasets(data);
-        if (data.length > 0) {
-          setSelectedDataset(data[0].name);
-          setSelectedTargetColumn(data[0].default_target);
+      for (let attempt = 0; attempt < 8 && !cancelled; attempt++) {
+        try {
+          const response = await fetch(`${API_BASE}/datasets`);
+          if (!response.ok) throw new Error(String(response.status));
+          const data: DatasetListItem[] = await response.json();
+          if (cancelled) return;
+          loaded = true;
+          clearTimeout(wakingTimer);
+          setDatasets(data);
+          if (data.length > 0) {
+            setSelectedDataset(data[0].name);
+            setSelectedTargetColumn(data[0].default_target);
+          }
+          setServerWaking(false);
+          return;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
         }
-      } catch {
-        setDatasets([]);
       }
+      loaded = true;
+      clearTimeout(wakingTimer);
+      if (!cancelled) setServerWaking(false);
     };
     loadDatasets();
+
+    return () => {
+      cancelled = true;
+      clearTimeout(wakingTimer);
+    };
   }, []);
 
   const visibleAlgorithms =
@@ -101,6 +132,7 @@ export default function ExplorePage() {
     setPipelineState({ sessionId: null, stages: createInitialStages() });
     setEvaluationResult(null);
     setCompareResult(null);
+    setCompareProgress(null);
     setValidAlgorithmIds(null);
   };
 
@@ -264,13 +296,73 @@ export default function ExplorePage() {
   const handleCompareAll = async () => {
     if (!pipelineState.sessionId) return;
 
-    const response = await fetch(
-      `${API_BASE}/pipeline/${pipelineState.sessionId}/compare`,
-      { method: "POST" }
-    );
-    const data: StageResponse = await response.json();
-    if (data.status === "done") {
-      setCompareResult(data.summary as unknown as CompareResult);
+    setCompareResult(null);
+    setCompareProgress({ done: 0, total: 0, queue: [] });
+    let rankKey = "accuracy";
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/pipeline/${pipelineState.sessionId}/compare/stream`,
+        { method: "POST" }
+      );
+      if (!response.ok || !response.body) throw new Error("stream unavailable");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const handle = (event: CompareStreamEvent) => {
+        if (event.type === "start") {
+          rankKey = event.problem_type === "classification" ? "accuracy" : "r2";
+          setCompareProgress({ done: 0, total: event.total, queue: event.algorithms });
+          setCompareResult({
+            problem_type: event.problem_type,
+            results: [],
+            note: event.note,
+          });
+        } else if (event.type === "result") {
+          // Rows arrive cheapest-first; keep the table ranked best-first as it fills.
+          setCompareResult((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  results: [...prev.results, event.row].sort(
+                    (a, b) => b.metrics[rankKey] - a.metrics[rankKey]
+                  ),
+                }
+              : prev
+          );
+          setCompareProgress((prev) => (prev ? { ...prev, done: prev.done + 1 } : prev));
+        } else if (event.type === "done") {
+          setCompareProgress(null);
+        } else if (event.type === "error") {
+          setCompareProgress((prev) => ({
+            done: prev?.done ?? 0,
+            total: prev?.total ?? 0,
+            queue: prev?.queue ?? [],
+            error: event.error,
+          }));
+        }
+      };
+
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.trim()) handle(JSON.parse(line) as CompareStreamEvent);
+        }
+      }
+      setCompareProgress((prev) => (prev && !prev.error ? null : prev));
+    } catch {
+      setCompareProgress((prev) => ({
+        done: prev?.done ?? 0,
+        total: prev?.total ?? 0,
+        queue: prev?.queue ?? [],
+        error: "Could not reach the backend. Try again in a few seconds.",
+      }));
     }
   };
 
@@ -315,6 +407,17 @@ export default function ExplorePage() {
           </p>
         </div>
 
+        {serverWaking && (
+          <p
+            role="status"
+            className="flex items-center gap-2 rounded-md border border-border bg-primary-soft px-3 py-2 text-sm text-foreground"
+          >
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            Waking up the server. Free hosting sleeps when idle, so the first load takes a few
+            seconds. It only happens once.
+          </p>
+        )}
+
         <div className="flex items-end gap-4 flex-wrap">
           <DatasetSelector
             datasets={datasets}
@@ -349,6 +452,7 @@ export default function ExplorePage() {
           problemType={trainedProblemType}
           metrics={evaluationResult}
           compareResult={compareResult}
+          compareProgress={compareProgress}
           trainSummary={pipelineState.stages.train.summary}
           sessionId={pipelineState.sessionId}
           numericFeatures={numericFeatures}

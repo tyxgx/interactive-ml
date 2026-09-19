@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Activity, Loader2 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { StageResponse } from "@/lib/pipeline";
@@ -192,11 +192,13 @@ function ImportanceView({ data }: { data: Importance }) {
   );
 }
 
+type Status = "loading" | "done" | "error";
+
 export default function DiagnosticsPanel({ sessionId, problemType, algorithm }: Props) {
-  const [active, setActive] = useState<DiagnosticKey | null>(null);
-  const [loading, setLoading] = useState<DiagnosticKey | null>(null);
+  const [active, setActive] = useState<DiagnosticKey>("learning-curve");
+  const [status, setStatus] = useState<Partial<Record<DiagnosticKey, Status>>>({});
   const [results, setResults] = useState<Partial<Record<DiagnosticKey, Record<string, unknown>>>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Partial<Record<DiagnosticKey, string>>>({});
 
   const classification = problemType === "classification";
   const tabs: { key: DiagnosticKey; label: string }[] = [
@@ -207,27 +209,55 @@ export default function DiagnosticsPanel({ sessionId, problemType, algorithm }: 
     { key: "importance", label: "Permutation importance" },
   ];
 
-  async function open(key: DiagnosticKey) {
-    setActive(key);
-    setError(null);
-    if (results[key]) return;
-    setLoading(key);
-    try {
-      const response = await fetch(`${API_BASE}/pipeline/${sessionId}/${key}`, { method: "POST" });
-      const data = (await response.json()) as StageResponse;
-      if (data.status === "done") {
-        setResults((prev) => ({ ...prev, [key]: data.summary as Record<string, unknown> }));
-      } else {
-        setError(String((data.summary as { error?: string }).error ?? "Diagnostic failed"));
-      }
-    } catch {
-      setError("Could not reach the backend. It may be waking up, try again in a few seconds.");
-    } finally {
-      setLoading(null);
-    }
-  }
+  // Start computing every diagnostic as soon as the model is trained, one at a time
+  // (so the small server is never hit with three heavy requests at once). By the time
+  // someone clicks a tab the result is usually already there.
+  useEffect(() => {
+    let cancelled = false;
+    const keys = tabs.map((t) => t.key);
 
-  const current = active ? results[active] : undefined;
+    (async () => {
+      for (const key of keys) {
+        if (cancelled) return;
+        setStatus((prev) => ({ ...prev, [key]: "loading" }));
+        try {
+          const response = await fetch(`${API_BASE}/pipeline/${sessionId}/${key}`, {
+            method: "POST",
+          });
+          const data = (await response.json()) as StageResponse;
+          if (cancelled) return;
+          if (data.status === "done") {
+            setResults((prev) => ({ ...prev, [key]: data.summary as Record<string, unknown> }));
+            setStatus((prev) => ({ ...prev, [key]: "done" }));
+          } else {
+            setErrors((prev) => ({
+              ...prev,
+              [key]: String((data.summary as { error?: string }).error ?? "Diagnostic failed"),
+            }));
+            setStatus((prev) => ({ ...prev, [key]: "error" }));
+          }
+        } catch {
+          if (cancelled) return;
+          setErrors((prev) => ({
+            ...prev,
+            [key]: "Could not reach the backend. Try again in a few seconds.",
+          }));
+          setStatus((prev) => ({ ...prev, [key]: "error" }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, classification]);
+
+  const activeStatus = status[active];
+  const error = activeStatus === "error" ? errors[active] : null;
+  const loading = activeStatus === "loading" || activeStatus === undefined ? active : null;
+
+  const current = results[active];
 
   return (
     <section className="rounded-lg border border-border bg-surface-raised p-5 flex flex-col gap-4">
@@ -246,19 +276,25 @@ export default function DiagnosticsPanel({ sessionId, problemType, algorithm }: 
           <button
             key={tab.key}
             type="button"
-            onClick={() => open(tab.key)}
-            disabled={loading !== null}
+            onClick={() => setActive(tab.key)}
             aria-pressed={active === tab.key}
             className={active === tab.key ? button.sm : button.subtle}
           >
-            {loading === tab.key && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {(status[tab.key] === "loading" || status[tab.key] === undefined) && (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            )}
             {tab.label}
           </button>
         ))}
       </div>
 
       {loading && (
-        <p className="text-xs text-muted-foreground">Computing, this can take a few seconds on large datasets.</p>
+        <div className="flex flex-col gap-3" aria-busy="true">
+          <p role="status" className="text-xs text-muted-foreground">
+            Computing in the background. This can take a little longer on large datasets.
+          </p>
+          <div className="aspect-[26/15] max-w-2xl animate-pulse rounded-md border border-border bg-surface-sunken" />
+        </div>
       )}
       {error && (
         <p role="alert" className="rounded-md border border-destructive/40 bg-destructive-soft px-3 py-2 text-xs text-destructive">

@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import time
 
@@ -6,6 +7,7 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sklearn.metrics import (
     accuracy_score,
@@ -193,6 +195,23 @@ def pipeline_start(body: StartRequest):
         return stage_response(
             session_id, "start", "failed", {"error": str(e), "required_stage": None}
         )
+
+
+def n_jobs_for(n_rows: int) -> int:
+    """Process-based parallelism only pays off once the data is big enough."""
+    return -1 if n_rows > 2000 else 1
+
+
+# Cheapest algorithms first so the first comparison rows appear immediately.
+ALGORITHM_COST_ORDER = [
+    "linear_regression",
+    "logistic_regression",
+    "decision_tree",
+    "knn",
+    "random_forest",
+    "svm",
+    "neural_network",
+]
 
 
 def subsample_train(X_train_t, y_train, limit=None):
@@ -564,7 +583,7 @@ def tune(session_id: str, body: TrainRequest):
         y_train = session["split"]["y_train"]
 
         X_fit, y_fit, subsampled = subsample_train(X_train_t, y_train)
-        search = GridSearchCV(model, param_grid, cv=5)
+        search = GridSearchCV(model, param_grid, cv=5, n_jobs=n_jobs_for(X_fit.shape[0]))
         search.fit(X_fit, y_fit)
 
         session["model"] = search.best_estimator_
@@ -762,6 +781,54 @@ def ask(body: AskRequest, request: Request):
         return {"answer": answer, "sources": [doc["title"] for doc in docs]}
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.post("/pipeline/{session_id}/compare/stream")
+def compare_stream(session_id: str):
+    """Same work as /compare, but streams one JSON line per finished algorithm."""
+    stage = "compare"
+    session, error_response = load_session_or_fail(session_id, stage)
+
+    def lines():
+        if error_response:
+            yield json.dumps({"type": "error", **error_response["summary"]}) + "\n"
+            return
+        try:
+            problem_type = session["schema"]["problem_type"]
+            X_train_t = session["preprocessed_data"]["X_train_t"]
+            X_test_t = session["preprocessed_data"]["X_test_t"]
+            y_test = session["split"]["y_test"]
+            X_fit, y_fit, subsampled = subsample_train(X_train_t, session["split"]["y_train"])
+
+            registry = MODEL_REGISTRY[problem_type]
+            order = [a for a in ALGORITHM_COST_ORDER if a in registry]
+            order += [a for a in registry if a not in order]
+
+            start = {"type": "start", "problem_type": problem_type, "total": len(order), "algorithms": order}
+            if subsampled:
+                start["note"] = (
+                    f"Trained on a {MAX_COMPARE_TRAIN_ROWS}-row sample of the training set "
+                    "to keep comparison fast."
+                )
+            yield json.dumps(start) + "\n"
+
+            for algorithm in order:
+                model = get_model(problem_type, algorithm)
+                t0 = time.perf_counter()
+                model.fit(X_fit, y_fit)
+                elapsed = time.perf_counter() - t0
+                metrics = compute_metrics(y_test, model.predict(X_test_t), problem_type)
+                row = {
+                    "algorithm": algorithm,
+                    "metrics": metrics,
+                    "training_time_seconds": round(elapsed, 4),
+                }
+                yield json.dumps({"type": "result", "row": row}) + "\n"
+            yield json.dumps({"type": "done"}) + "\n"
+        except Exception as e:
+            yield json.dumps({"type": "error", "error": str(e), "required_stage": None}) + "\n"
+
+    return StreamingResponse(lines(), media_type="application/x-ndjson")
 
 
 def _diagnostic(session_id: str, stage: str, compute, classification_only=None):

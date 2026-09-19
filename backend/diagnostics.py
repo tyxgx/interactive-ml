@@ -31,7 +31,7 @@ def scoring_for(problem_type: str) -> str:
     return "accuracy" if problem_type == "classification" else "r2"
 
 
-def learning_curve_data(model, X, y, problem_type: str) -> dict:
+def learning_curve_data(model, X, y, problem_type: str, n_jobs: int = 1) -> dict:
     scoring = scoring_for(problem_type)
     sizes, train_scores, val_scores = learning_curve(
         model,
@@ -42,7 +42,7 @@ def learning_curve_data(model, X, y, problem_type: str) -> dict:
         scoring=scoring,
         shuffle=True,
         random_state=42,
-        n_jobs=1,
+        n_jobs=n_jobs,
     )
     return {
         "scoring": scoring,
@@ -119,7 +119,7 @@ def _clean_feature_name(name: str) -> str:
 
 
 def permutation_importance_data(
-    model, X_test, y_test, feature_names, problem_type: str, top_n: int = 15
+    model, X_test, y_test, feature_names, problem_type: str, top_n: int = 15, n_jobs: int = 1
 ) -> dict:
     """Score drop when one feature is shuffled. Works for every algorithm."""
     result = permutation_importance(
@@ -129,7 +129,7 @@ def permutation_importance_data(
         scoring=scoring_for(problem_type),
         n_repeats=3,
         random_state=42,
-        n_jobs=1,
+        n_jobs=n_jobs,
     )
     order = np.argsort(result.importances_mean)[::-1][:top_n]
     return {

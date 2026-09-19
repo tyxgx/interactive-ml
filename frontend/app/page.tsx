@@ -12,6 +12,7 @@ import {
 import BoundaryPlayground from "@/components/landing/BoundaryPlayground";
 import PipelineTabs from "@/components/landing/PipelineTabs";
 import Reveal from "@/components/landing/Reveal";
+import WarmUp from "@/components/landing/WarmUp";
 import { algorithms } from "@/lib/algorithms";
 
 export const metadata: Metadata = {
@@ -69,6 +70,7 @@ const gridBackground = {
 export default function Landing() {
   return (
     <div className="flex min-h-screen flex-col">
+      <WarmUp />
       <header className="sticky top-0 z-40 border-b border-border bg-surface/80 backdrop-blur-md">
         <nav className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2">

@@ -1,7 +1,7 @@
 import { Fragment } from "react";
-import { BarChart3, TrendingUp, Grid3x3, Table2, GitCompare } from "lucide-react";
+import { BarChart3, TrendingUp, Grid3x3, Table2, GitCompare, Loader2 } from "lucide-react";
 import { algorithms } from "@/lib/algorithms";
-import { CompareResult } from "@/lib/pipeline";
+import { CompareResult, CompareProgress } from "@/lib/pipeline";
 import { card } from "@/lib/ui";
 import DecisionBoundaryPlot from "./DecisionBoundaryPlot";
 
@@ -94,6 +94,7 @@ type OutputPanelProps = {
   problemType: string | null;
   metrics: Record<string, unknown> | null;
   compareResult: CompareResult | null;
+  compareProgress?: CompareProgress | null;
   trainSummary: Record<string, unknown> | null;
   sessionId: string | null;
   numericFeatures: string[];
@@ -104,6 +105,7 @@ export default function OutputPanel({
   problemType,
   metrics,
   compareResult,
+  compareProgress = null,
   trainSummary,
   sessionId,
   numericFeatures,
@@ -145,7 +147,8 @@ export default function OutputPanel({
     (featureSignal && featureSignal.length > 0) ||
     (confusionMatrix && confusionMatrixLabels) ||
     (actualVsPredicted && actualVsPredicted.length > 0) ||
-    compareResult;
+    compareResult ||
+    compareProgress;
 
   return (
     <div className="flex flex-col gap-3">
@@ -319,11 +322,27 @@ export default function OutputPanel({
           </div>
         )}
 
-        {compareResult && (
+        {(compareResult || compareProgress) && (
           <div className="flex flex-col gap-2">
             <SectionHeading icon={GitCompare}>
-              Algorithm Comparison ({compareResult.problem_type})
+              Algorithm Comparison{compareResult ? ` (${compareResult.problem_type})` : ""}
             </SectionHeading>
+            {compareProgress && !compareProgress.error && (
+              <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                {compareProgress.total > 0
+                  ? `Fitting ${
+                      algorithmName(compareProgress.queue[compareProgress.done] ?? "") || "next model"
+                    } (${compareProgress.done} of ${compareProgress.total} done)`
+                  : "Starting comparison"}
+              </p>
+            )}
+            {compareProgress?.error && (
+              <p role="alert" className="rounded-md border border-destructive/40 bg-destructive-soft px-3 py-2 text-xs text-destructive">
+                {compareProgress.error}
+              </p>
+            )}
+            {compareResult && compareResult.results.length > 0 && (
             <div className="overflow-x-auto rounded-md border border-border">
               <table className="w-full border-collapse text-sm">
                 <thead>
@@ -370,7 +389,8 @@ export default function OutputPanel({
                 </tbody>
               </table>
             </div>
-            {compareResult.note && (
+            )}
+            {compareResult?.note && (
               <p className="text-xs text-muted-foreground">{compareResult.note}</p>
             )}
           </div>

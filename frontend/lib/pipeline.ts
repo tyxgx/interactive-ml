@@ -72,3 +72,16 @@ export function createInitialStages(): Record<StageName, StageState> {
     return acc;
   }, {} as Record<StageName, StageState>);
 }
+
+export type CompareProgress = {
+  done: number;
+  total: number;
+  queue: string[];
+  error?: string;
+};
+
+export type CompareStreamEvent =
+  | { type: "start"; problem_type: "classification" | "regression"; total: number; algorithms: string[]; note?: string }
+  | { type: "result"; row: CompareResultRow }
+  | { type: "done" }
+  | { type: "error"; error: string };

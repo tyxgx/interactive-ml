@@ -126,3 +126,31 @@ def test_decision_boundary_only_for_classification(client):
         json={"feature_x": "age", "feature_y": "bmi"},
     ).json()
     assert bad["status"] == "failed"
+
+
+def test_compare_stream_emits_start_results_done(client):
+    import json
+
+    sid, _ = run_pipeline(client, "iris")
+    with client.stream("POST", f"/pipeline/{sid}/compare/stream") as response:
+        events = [json.loads(line) for line in response.iter_lines() if line]
+    assert events[0]["type"] == "start"
+    assert events[-1]["type"] == "done"
+    results = [e["row"] for e in events if e["type"] == "result"]
+    assert len(results) == events[0]["total"] == 6
+    assert {r["algorithm"] for r in results} == set(events[0]["algorithms"])
+    # cheap algorithms come first
+    assert events[0]["algorithms"][0] == "logistic_regression"
+    assert events[0]["algorithms"][-1] == "neural_network"
+
+
+def test_compare_stream_reports_missing_prerequisite(client):
+    import json
+
+    sid = client.post(
+        "/pipeline/start", json={"dataset": "iris", "target_column": "target"}
+    ).json()["session_id"]
+    with client.stream("POST", f"/pipeline/{sid}/compare/stream") as response:
+        events = [json.loads(line) for line in response.iter_lines() if line]
+    assert events[0]["type"] == "error"
+    assert events[0]["required_stage"] == "preprocessed_data"
