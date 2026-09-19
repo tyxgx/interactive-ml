@@ -1,0 +1,19 @@
+name: Selenium UI tests
+on:
+  workflow_dispatch:
+  push:
+    paths: ["e2e_selenium/**", ".github/workflows/selenium.yml"]
+jobs:
+  selenium:
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: https://interactive-ml-kappa.vercel.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r e2e_selenium/requirements.txt
+      - run: pytest e2e_selenium -v --junitxml=selenium-report.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: selenium-report, path: selenium-report.xml }
