@@ -95,7 +95,7 @@ export default function Landing() {
         {/* hero */}
         <section className="relative isolate overflow-hidden">
           <div aria-hidden className="absolute inset-0 -z-10" style={gridBackground} />
-          <div className="mx-auto grid w-full max-w-7xl items-center gap-12 px-4 pb-16 pt-14 sm:px-6 md:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-16 lg:pb-20 lg:pt-16">
+          <div className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-center gap-12 px-4 pb-16 pt-14 sm:px-6 md:pt-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-16 lg:pb-20 lg:pt-16">
             <Reveal>
               <h1 className="text-balance text-4xl font-semibold leading-[1.05] tracking-tighter sm:text-5xl lg:text-6xl">
                 Watch a model learn, one stage at a time.
@@ -238,7 +238,7 @@ export default function Landing() {
 
         {/* under the hood */}
         <section className="border-y border-border bg-surface-raised">
-          <div className="mx-auto grid w-full max-w-7xl gap-12 px-4 py-20 sm:px-6 md:py-28 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-16">
+          <div className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] gap-12 px-4 py-20 sm:px-6 md:py-28 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-16">
             <Reveal>
               <h2 className="text-balance text-3xl font-semibold tracking-tighter sm:text-4xl md:text-5xl">
                 Correct where it counts.

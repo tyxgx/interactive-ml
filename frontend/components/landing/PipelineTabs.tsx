@@ -70,7 +70,7 @@ export default function PipelineTabs() {
   const stage = stages[active];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <div role="tablist" aria-label="Pipeline stages" className="flex flex-col gap-1.5">
         {stages.map((s, i) => (
           <button

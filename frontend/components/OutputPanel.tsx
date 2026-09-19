@@ -370,6 +370,9 @@ export default function OutputPanel({
                 </tbody>
               </table>
             </div>
+            {compareResult.note && (
+              <p className="text-xs text-muted-foreground">{compareResult.note}</p>
+            )}
           </div>
         )}
       </div>

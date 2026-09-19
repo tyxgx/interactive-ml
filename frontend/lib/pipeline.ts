@@ -47,6 +47,7 @@ export type CompareResultRow = {
 export type CompareResult = {
   problem_type: "classification" | "regression";
   results: CompareResultRow[];
+  note?: string;
 };
 
 export type DecisionBoundaryResult = {
